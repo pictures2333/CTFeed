@@ -16,13 +16,23 @@ AsyncSessionLocal = async_sessionmaker(
     class_=AsyncSession
 )
 
+# initialize database
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
+# get database session
 @asynccontextmanager
 async def get_db():
+    session = AsyncSessionLocal()
+    try:
+        yield session
+    finally:
+        await session.close()
+
+
+async def fastapi_get_db():
     session = AsyncSessionLocal()
     try:
         yield session

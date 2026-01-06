@@ -37,6 +37,9 @@ env/
 data/
 *.log
 logs/
+database/
+cogs.old/
+crud.old/
 
 # IDE
 .vscode/
