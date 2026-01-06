@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 
 from contextlib import asynccontextmanager
-import logging
 
 from fastapi import FastAPI
+from starlette.middleware.sessions import SessionMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 
+from src.config import settings
 from src.database import database
 from src import schema
 from src import bot
+from src import router
 
 # startup and shutdown
 @asynccontextmanager
@@ -29,6 +32,28 @@ async def lifespan(app:FastAPI):
 
 # app
 app = FastAPI(debug=False, lifespan=lifespan)
+
+# middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.HTTP_FRONTEND_URL],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.HTTP_SECRET_KEY,
+    domain=settings.HTTP_COOKIE_DOMAIN,
+    path="/",
+    same_site="Lax",
+    https_only=True,
+    max_age=settings.HTTP_COOKIE_MAX_AGE,
+)
+
+# router
+app.include_router(router.auth_router)
 
 @app.get("/")
 async def index() -> schema.General:

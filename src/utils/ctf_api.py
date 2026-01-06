@@ -1,5 +1,5 @@
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any, Tuple
+from datetime import datetime
 import aiohttp
 import logging
 
@@ -8,11 +8,14 @@ from src.config import settings
 logger = logging.getLogger(__name__)
 
 
-async def fetch_ctf_events(event_id:Optional[int]=None) -> List[Dict[str, Any]]:
+async def fetch_ctf_events(event_id:Optional[int]=None) -> Tuple[List[Dict[str, Any]], Exception]:
+    """
+    events, err = await fetch_ctf_events(2987)
+    """
+    
     params = {
         "limit": 20,
         "start": int(datetime.now().timestamp()),
-        #"finish": int((datetime.now() + timedelta(days=settings.CTFTIME_SEARCH_DAYS)).timestamp()),
     }
     
     url = settings.CTFTIME_API_URL
@@ -25,13 +28,12 @@ async def fetch_ctf_events(event_id:Optional[int]=None) -> List[Dict[str, Any]]:
             async with session.get(url, params=params) as response:
                 if response.status == 200:
                     if not (event_id is None):
-                        return [await response.json()]
+                        return [await response.json()], None
                     
-                    return await response.json()
+                    return await response.json(), None
     except Exception as e:
         logger.error(f"API error: {e}")
-    
-    return []
+        return [], e
 
 
 async def fetch_team_info(team_id):

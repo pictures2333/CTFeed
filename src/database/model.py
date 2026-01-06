@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Column, String, Integer, ForeignKey, CheckConstraint, Enum, ARRAY
+from sqlalchemy import Column, String, BigInteger, ForeignKey, CheckConstraint, Enum, ARRAY
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
@@ -40,36 +40,15 @@ class User(Base):
     __tablename__ = "users"
     
     # index
-    discord_id = Column(Integer, primary_key=True, index=True, nullable=False, unique=True, autoincrement=False)
+    discord_id = Column(BigInteger, primary_key=True, index=True, nullable=False, unique=True, autoincrement=False)
     
     # attrbutes
     status = Column(Enum(Status, name="enum_status"), nullable=False, default=Status.online)
     skills = Column(ARRAY(Enum(Skills, name="enum_skills")))
     rhythm_games = Column(ARRAY(Enum(RhythmGames, name="enum_rhythm_games")))
     
-    
-"""
-class Event(Base):
-    __tablename__ = 'events'
-    
-    # id
-    event_id = Column(Integer, primary_key=True, index=True, nullable=False, unique=True, autoincrement=False)
 
-    # event info
-    title = Column(String, nullable=False)
-    start = Column(Integer, nullable=False)
-    finish = Column(Integer, nullable=False)
-    
-    # discord
-    channel_id = Column(Integer, nullable=True, unique=True, default=None)
-    
-
-class CustomChannel(Base):
-    __tablename__ = 'custom_channel'
-    
-    # discord
-    channel_id = Column(Integer, primary_key=True, index=True, nullable=False, unique=True, autoincrement=False)
-"""
+# event
 
 """
 Event:
