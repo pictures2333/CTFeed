@@ -11,6 +11,7 @@ from src.utils.ctf_api import fetch_ctf_events
 from src.utils.embed_creator import create_event_embed
 from src.config import settings
 
+"""
 logger = logging.getLogger(__name__)
 
 async def join_channel(
@@ -136,3 +137,4 @@ async def join_channel_custom(
         logger.error(f"Failed to join channel: {e}")
         await interaction.followup.send(content=f"Failed to join channel: {e}", ephemeral=True)
         return
+"""

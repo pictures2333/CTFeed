@@ -6,7 +6,7 @@ from authlib.integrations.starlette_client import OAuth
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
-from src.utils import security
+from src.backend import security
 from src.database.database import fastapi_get_db
 from src import crud
 

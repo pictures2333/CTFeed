@@ -31,6 +31,8 @@ async def fetch_ctf_events(event_id:Optional[int]=None) -> Tuple[List[Dict[str, 
                         return [await response.json()], None
                     
                     return await response.json(), None
+                else:
+                    return [], None
     except Exception as e:
         logger.error(f"API error: {e}")
         return [], e

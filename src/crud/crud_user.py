@@ -2,6 +2,7 @@ from typing import List, Optional, Tuple
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 import sqlalchemy
 
 from src.database.model import User
@@ -30,6 +31,7 @@ async def create_user(
 
     return user
 
+
 # read
 async def read_user(
     db:AsyncSession,
@@ -40,6 +42,7 @@ async def read_user(
     """
     try:
         query = sqlalchemy.select(User)
+        query = query.options(selectinload(User.events))
         
         if not(discord_id is None):
             query = query.where(User.discord_id == discord_id)
@@ -49,7 +52,8 @@ async def read_user(
     except Exception as e:
         logger.error(f"failed to read users: {str(e)}")
         return [], e
-    
+
+
 # update
 
 # delete
