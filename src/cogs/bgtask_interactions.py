@@ -315,6 +315,51 @@ async def auto_archive(
                     logger.error(f"failed to move channel (id={channel_id}) to category (id={settings.ARCHIVE_CATEGORY_ID})")
 
 
+async def recover_scheduled_events(guild:discord.Guild):
+    """
+    Detect events which are not archived and finish after now+DATABASE_SEARCH_DAYS (for example: now+(-90))
+    
+    - detect whether it's scheduled event is exists
+    """
+    async with get_db() as session:
+        # include_archived=False -> do not track archived events
+        known_events_db, err = await crud.read_ctftime_event(session, include_archived=False)
+        if not(err is None):
+            logger.error(f"failed to get known CTF events from database, skipped...")
+            return
+    
+        for event_db in known_events_db:
+            if not(event_db.channel_id is None):
+                if (sc_id := event_db.scheduled_event_id) is None or \
+                    guild.get_scheduled_event(sc_id) is None:
+                    # need recreate
+                    logger.info(f"Detected: scheduled event of event (id={event_db.id}, event_id={event_db.event_id}) needs to be recreated")
+                    try:
+                        # create scheduled event
+                        sc:discord.ScheduledEvent = await guild.create_scheduled_event(
+                            location=guild.name,
+                            name=event_db.title,
+                            start_time=datetime.fromtimestamp(event_db.start),
+                            end_time=datetime.fromtimestamp(event_db.finish)
+                        )
+                        if sc is None:
+                            raise Exception("failed to create scheduled event on Discord")
+                        
+                        # update database
+                        event_db = await crud.update_event(
+                            session,
+                            id=event_db.id,
+                            scheduled_event_id=sc.id
+                        )
+                        if event_db is None:
+                            # rollback
+                            await sc.delete()
+                            # raise exception
+                            raise Exception("failed to update event on database")
+                    except Exception as e:
+                        logger.error(f"failed to create scheduled event for event (id={event_db.id}, event_id={event_db.event_id}): {str(e)}")
+
+
 # cog
 class CTFBGTask(commands.Cog):
     def __init__(self, bot:commands.Bot):
@@ -354,7 +399,7 @@ class CTFBGTask(commands.Cog):
         
         await auto_archive(guild, channel, archive_category)
         
-        # 5. if scheduled event was removed, recreate
+        await recover_scheduled_events(guild)
     
     
     @task_checks.before_loop
