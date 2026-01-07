@@ -35,7 +35,7 @@ async def create_user(
 # read
 async def read_user(
     db:AsyncSession,
-    discord_id:Optional[int],
+    discord_id:Optional[int]=None,
 ) -> Tuple[List[User], Exception]:
     """
     users, err = await read_user(db, discord_id)

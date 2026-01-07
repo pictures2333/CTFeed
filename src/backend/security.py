@@ -14,7 +14,7 @@ from src import crud
 # logging
 logger = logging.getLogger("uvicorn")
 
-# functions
+# utils
 async def discord_check_user(
     discord_id:int,
     force_pm:bool
@@ -51,61 +51,68 @@ async def discord_check_user(
         return None
 
 
-async def check_user(
+# functions
+async def auto_register_and_check_user(
     discord_id:int,
     force_pm:bool=False,
-) -> Tuple[Optional[User], Optional[discord.Member]]:
+    auto_register:bool=True
+) -> Optional[Tuple[User, discord.Member]]:
     """
     check a user
-    - in database
     - discord_check_user(discord_id)
-    
-    returns:
-    - db_user, member
-    - None, None
+    - check in database
+    - if not in database -> register
+    - if in database -> login
     """
-    try:
-        # check database
-        async with get_db() as db:
-            users, err = await crud.read_user(db, discord_id)
-        if not(err is None) or len(users) != 1:
-            # error or not found
-            return None, None
+    # check discord
+    member = await discord_check_user(discord_id=discord_id, force_pm=force_pm)
+    if member is None:
+        return None
+    
+    async with get_db() as session:
+        # check db
+        db_users, err = await crud.read_user(session, discord_id=discord_id)
+        if not(err is None): # error
+            return None
+    
+        if len(db_users) == 0:
+            # not exists -> register
+            if auto_register:
+                db_user = await crud.create_user(session, discord_id=discord_id)
+                if db_user is None:
+                    return None
+            else:
+                return None
+        else:
+            # exists -> login
+            db_user = db_users[0]
         
-        # discord check user
-        member = await discord_check_user(discord_id, force_pm)
-        if member is None:
-            return None, None
-        return users[0], member
-    except Exception as e:
-        logger.error(f"error in check_user(): {str(e)}")
-        return None, None
+        return (db_user, member)
 
 
 # for fastapi
-async def fastapi_check_user(request:Request):
+async def fastapi_check_user(request:Request) -> Tuple[User, discord.Member]:
     try:
         discord_id = int(request.session["discord_id"])
     except:
         raise HTTPException(401)
     
-    u = await check_user(discord_id, False)
-    db_user, member = u
-    if db_user is None or member is None:
+    u = await auto_register_and_check_user(discord_id, False, False)
+    if u is None:
         raise HTTPException(403)
     
-    return db_user, member
+    return u
 
 
-async def fastapi_check_pm_user(request:Request):
+async def fastapi_check_pm_user(request:Request) -> Tuple[User, discord.Member]:
     try:
         discord_id = int(request.session["discord_id"])
     except:
         raise HTTPException(401)
     
-    u = await check_user(discord_id, True)
-    db_user, member = u
-    if db_user is None or member is None:
+    u = await auto_register_and_check_user(discord_id, True, False)
+    if u is None:
         raise HTTPException(403)
     
-    return db_user, member
+    return u
+

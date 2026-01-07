@@ -11,6 +11,7 @@ from src.database.model import Event
 from src.utils import ctf_api
 from src import crud
 from src.utils.embed_creator import create_event_embed
+from src.backend import join_channel, security
 
 # logging
 logger = logging.getLogger("uvicorn")
@@ -61,7 +62,7 @@ async def detect_event_new(
                     discord.ui.Button(
                         label='Join',
                         style=discord.ButtonStyle.blurple,
-                        custom_id=f"ctf_join_channel:event:{event_id}",
+                        custom_id=f"ctf_join_channel:event:{new_event_db.id}",
                         emoji=settings.EMOJI,
                     )
                 )
@@ -391,6 +392,7 @@ class CTFBGTask(commands.Cog):
         archive_category:discord.CategoryChannel = discord.utils.get(guild.categories, id=settings.ARCHIVE_CATEGORY_ID)
         if archive_category is None:
             logger.error(f"Can not get category id={settings.ARCHIVE_CATEGORY_ID} from guild {guild.name} (id={guild.id})")
+            return
         
         # process
         await detect_event_new(guild, channel)
@@ -412,8 +414,6 @@ class CTFBGTask(commands.Cog):
     
     
     # interaction handler
-    """
-    # interaction handler
     @commands.Cog.listener()
     async def on_interaction(self, interaction:discord.Interaction):
         if interaction.type != discord.InteractionType.component:
@@ -424,26 +424,34 @@ class CTFBGTask(commands.Cog):
             return
         
         if custom_id.startswith("ctf_join_channel:event:"):
+            # check user
+            u = await security.auto_register_and_check_user(
+                discord_id=interaction.user.id,
+                force_pm=False,
+                auto_register=True
+            )
+            if u is None:
+                await interaction.response.send_message("Permission Denied", ephemeral=True)
+                return
+            db_user, member = u
+            
+            # get event db id
             try:
                 _ = custom_id.split(":")
-                event_id:int = int(_[2])
+                event_db_id:int = int(_[2])
             except:
                 await interaction.response.send_message("Invalid arguments", ephemeral=True)
                 return
             
-            await join_channel(self.bot, interaction, event_id)
-        elif custom_id.startswith("ctf_join_channel:custom:"):
-            try:
-                _ = custom_id.split(":")
-                channel_id:int = int(_[2])
-            except:
-                await interaction.response.send_message("Invalid arguments", ephemeral=True)
+            # join channel
+            await interaction.response.defer(ephemeral=True)
+            err, code = await join_channel.join_channel(self.bot, member, event_db_id)
+            if not(err is None):
+                await interaction.followup.send(str(err), ephemeral=True)
                 return
             
-            await join_channel_custom(self.bot, interaction, channel_id)
-    
-        return
-    """
+            await interaction.followup.send("Done.", ephemeral=True)
+
 
 def setup(bot:commands.Bot):
     bot.add_cog(CTFBGTask(bot))

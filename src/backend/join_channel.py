@@ -1,4 +1,5 @@
-from typing import Optional
+from typing import Optional, Tuple, Dict, Any
+from datetime import datetime
 import logging
 
 from discord.ext import commands
@@ -7,134 +8,128 @@ import discord
 from src.database.model import Event
 from src.database.database import get_db
 from src import crud
-from src.utils.ctf_api import fetch_ctf_events
+from src.utils import ctf_api
 from src.utils.embed_creator import create_event_embed
 from src.config import settings
 
-"""
-logger = logging.getLogger(__name__)
+# logging
+logger = logging.getLogger("uvicorn")
 
-async def join_channel(
-    bot:commands.Bot,
-    interaction:discord.Interaction,
-    event_id:int,
-):
-    await interaction.response.defer(ephemeral=True)
-        
+# functions
+async def join_channel(bot:commands.Bot, member:discord.Member, event_db_id:int) -> Tuple[Exception, int]:
+    """
+    Join channel or create channel
+    
+    returns:
+    - Exception and error_code
+    """
+    
+    # get guild
+    guild:discord.Guild = bot.get_guild(settings.GUILD_ID)
+    if guild is None:
+        logger.error(f"invalid guild id={settings.GUILD_ID}")
+        return Exception(f"invalid guild id={settings.GUILD_ID}"), 500
+    
+    # get category
+    category_id = settings.CTF_CHANNEL_CATETORY_ID
+    category:discord.CategoryChannel = discord.utils.get(guild.categories, id=category_id)
+    if category_id is None:
+        logger.error(f"Can not get category id={settings.ARCHIVE_CATEGORY_ID} from guild {guild.name} (id={guild.id})")
+        return Exception(f"Can not get category id={settings.ARCHIVE_CATEGORY_ID} from guild {guild.name} (id={guild.id})"), 500
+    
     async with get_db() as session:
         # get event from database
-        events = await crud.read_event(session, event_id=[event_id])
-        if len(events) != 1:
-            await interaction.followup.send(content="Invalid event", ephemeral=True)
-            return
-        event:Event = events[0]
+        # include_archived=False -> you can't join archived events
+        custom_event = 0
+        event_db, err = await crud.read_ctftime_event(session, id=event_db_id, include_archived=False)
+        if not(err is None):
+            return Exception(f"failed to get known events from database: {str(err)}"), 500
+        if len(event_db) == 0:
+            # maybe custom event
+            custom_event = 1
+            event_db, err = await crud.read_custom_event(session, id=event_db_id, include_archived=False)
+            if not(err is None):
+                return Exception(f"failed to get known events from database: {str(err)}"), 500
+            if len(event_db) == 0:
+                return Exception(f"event id={event_db_id} not found"), 404
+        event_db = event_db[0]
         
-        if not(event.channel_id is None) and not(bot.get_channel(event.channel_id) is None): # channel exists
+        # create or join
+        if not((channel_id := event_db.channel_id) is None) and \
+            not((channel := guild.get_channel(channel_id)) is None):
+            # exists -> join
             try:
-                member = interaction.guild.get_member(interaction.user.id)
-                channel = bot.get_channel(event.channel_id)
-                
                 if channel.permissions_for(member).view_channel == True:
-                    await interaction.followup.send(content="You have joined the channel", ephemeral=True)
-                    return
+                    return Exception(f"Member {member.name} (id={member.id}) has joined the channel"), 400
                 
                 await channel.set_permissions(member, view_channel=True)
                 await channel.send(embed=discord.Embed(
                     color=discord.Color.green(),
-                    title=f"{interaction.user.display_name} joined the channel"
+                    title=f"{member.display_name} joined the channel"
                 ))
                 
-                await interaction.followup.send(content="Done", ephemeral=True)
-                
-                logger.info(f"User {interaction.user.display_name}(id={interaction.user.id}) joined channel {channel.name}(id={channel.id})")
-                return
+                logger.info(f"User {member.name} (id={member.id}) joined channel {channel.name} (id={channel.id}) of event {event_db.title} (id={event_db.id}, event_id={event_db.event_id})")
+                return None, 200
             except Exception as e:
-                logger.error(f"Failed to join channel: {e}")
-                await interaction.followup.send(content=f"Failed to join channel: {e}", ephemeral=True)
-                return
-        else: # channel not found or invalid
-            # get event from CTFTime
-            events_api = await fetch_ctf_events(event.event_id)
-            if len(events_api) != 1:
-                await interaction.followup.send(content="Invalid event", ephemeral=True)
-                return
-            event_api:Event = events_api[0]
+                logger.error(f"failed to join channel (id={channel_id}): {str(e)}")
+                return Exception(f"failed to join channel (id={channel_id}): {str(e)}"), 500
+        else:
+            # not exists -> create
+            event_api:Optional[Dict[str, Any]] = None
+            # get event from CTFTime (CTFTime event)
+            if not custom_event:
+                events_api, err = await ctf_api.fetch_ctf_events(event_db.event_id)
+                if not(err is None):
+                    return Exception(f"failed to get event (event_id={event_db.event_id}) from CTFTime: {str(e)}"), 500
+                if len(events_api) == 0:
+                    return Exception(f"event (event_id={event_db.event_id}) not found (on CTFTime)"), 404
+                event_api = events_api[0]
             
-            # create channel
-            category_id = settings.CTF_CHANNEL_CATETORY_ID
-            guild = interaction.guild
-            category = discord.utils.get(interaction.guild.categories, id=category_id)
-            if category is None:
-                await interaction.followup.send(content=f"Category id={category_id} not found", ephemeral=True)
-                return
-
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                interaction.user: discord.PermissionOverwrite(view_channel=True),
+                member: discord.PermissionOverwrite(view_channel=True),
                 guild.me: discord.PermissionOverwrite(view_channel=True)
             }
-
-            try:
-                new_channel = await guild.create_text_channel(event.title, category=category, overwrites=overwrites)
-                event_id = event.event_id
-                event = await crud.update_event(session, event_id=event_id, channel_id=new_channel.id)
-                if event is None:
-                    await new_channel.delete(reason=f"Failed to update event_id={event_id} on database")
-                    await interaction.followup.send(content=f"Failed to create channel: Failed to update event_id={event_id} on database", ephemeral=True)
-                    return
-                
-                embed = await create_event_embed(event_api, f"{interaction.user.display_name} 發起了 {event.title}")
-                
-                await new_channel.send(embed=embed)
-                    
-                await interaction.followup.send(content="Done", ephemeral=True)
-                
-                logger.info(f"User {interaction.user.display_name}(id={interaction.user.id}) created and joined channel {new_channel.name}(id={new_channel.id})")
-                return
-            except Exception as e:
-                logger.error(f"Failed to create channel: {e}")
-                await interaction.followup.send(content=f"Failed to create channel: {e}", ephemeral=True)
-                return
             
+            try:
+                # create scheduled event
+                if not custom_event:
+                    sc:discord.ScheduledEvent = await guild.create_scheduled_event(
+                        location=guild.name,
+                        name=event_db.title,
+                        start_time=datetime.fromtimestamp(event_db.start),
+                        end_time=datetime.fromtimestamp(event_db.finish),
+                    )
+                    if sc is None:
+                        raise Exception(f"failed to create scheduled event on Discord")
+                
+                # create channel
+                new_channel = await guild.create_text_channel(event_db.title, category=category, overwrites=overwrites)
+                
+                if not custom_event:
+                    event_db = await crud.update_event(session, id=event_db.id, channel_id=new_channel.id, scheduled_event_id=sc.id)
+                else:
+                    event_db = await crud.update_event(session, id=event_db.id, channel_id=new_channel.id)
+                if event_db is None:
+                    # rollback
+                    if not custom_event:
+                        await sc.delete()
+                    await new_channel.delete()
+                    # raise excpetion
+                    raise Exception(f"failed to update event on database")
+                
+                # send notification
+                if not custom_event:
+                    embed = await create_event_embed(event_api, f"{member.display_name} raised {event_db.title}")
+                else:
+                    embed = discord.Embed(
+                        color=discord.Color.green(),
+                        title=f"{member.display_name} created the channel"
+                    )
+                await new_channel.send(embed=embed)
+                
+                logger.info(f"User {member.name} (id={member.id}) created and joined channel {new_channel.name} (id={new_channel.id})")
+            except Exception as e:
+                return Exception(f"failed to create channel for event (id={event_db.id}): {str(e)}"), 500
 
-async def join_channel_custom(
-    bot:commands.Bot,
-    interaction:discord.Interaction,
-    channel_id:int,
-):
-    await interaction.response.defer(ephemeral=True)
-    
-    # get channel from database
-    async with get_db() as session:
-        channel_db = await crud.read_custom_channel(session, channel_id=channel_id)
-    if len(channel_db) != 1:
-        await interaction.followup.send(f"Channel (id={channel_id}) not found", ephemeral=True)
-        return
-    
-    # get channel from discord
-    channel = bot.get_channel(channel_id)
-    if channel is None:
-        await interaction.followup.send(f"Channel (id={channel_id}) not found", ephemeral=True)
-        return
-    
-    # join channel
-    try:
-        if channel.permissions_for(interaction.user).view_channel == True:
-            await interaction.followup.send(content="You have joined the channel", ephemeral=True)
-            return
-                
-        await channel.set_permissions(interaction.user, view_channel=True)
-        await channel.send(embed=discord.Embed(
-            color=discord.Color.green(),
-            title=f"{interaction.user.display_name} joined the channel"
-        ))
-                
-        await interaction.followup.send(content="Done", ephemeral=True)
-                
-        logger.info(f"User {interaction.user.display_name}(id={interaction.user.id}) joined channel {channel.name}(id={channel.id})")
-        return
-    except Exception as e:
-        logger.error(f"Failed to join channel: {e}")
-        await interaction.followup.send(content=f"Failed to join channel: {e}", ephemeral=True)
-        return
-"""
+            return None, 200
