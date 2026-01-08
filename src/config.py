@@ -31,7 +31,6 @@ class Settings(BaseSettings):
     DATABASE_URL:str
     
     # Misc
-    TIMEZONE:str
     EMOJI:str="🚩"
 
     model_config = SettingsConfigDict(env_file=".env")

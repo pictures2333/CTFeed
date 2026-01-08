@@ -5,7 +5,7 @@ from datetime import datetime
 from src.utils.ctf_api import fetch_team_info
 from src.utils.country_flags import get_country_info
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn")
 
 
 async def create_event_embed(event, title:str):
