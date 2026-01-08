@@ -21,18 +21,20 @@ async def create_event(
     start:Optional[int],
     finish:Optional[int],
 ) -> Optional[Event]:
+    """
+    create event
+    
+    create a CTFTime event needs title, event_id, start, finish
+    create a custom event only needs title (title as channel name)
+    """
     event = Event(title=title)
     
     if not(event_id is None):
-        # CTFTime event
-        # need start and finish
         if start is None or finish is None:
             return None
         event.event_id = event_id
         event.start = start
         event.finish = finish
-    # custom event
-    # only need title
     
     try:
         db.add(event)

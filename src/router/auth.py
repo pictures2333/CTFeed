@@ -59,26 +59,15 @@ async def login(
         logger.error(f"login(): failed to get user info: {e}")
         raise HTTPException(500)
     
-    # check discord
-    member = await security.discord_check_user(user_id, False)
-    if member is None:
+    # check permission and login (or register)
+    u = await security.auto_register_and_check_user(user_id, False, True)
+    if u is None:
         raise HTTPException(403)
+    db_user, member = u
     
-    # check db
-    db_user, err = await crud.read_user(db, discord_id=user_id)
-    if not(err is None):
-        raise HTTPException(500)
-    
-    if len(db_user) != 1:
-        # register
-        new_user = await crud.create_user(db, discord_id=user_id)
-        if new_user is None:
-            raise HTTPException(500)
-        return RedirectResponse(settings.HTTP_FRONTEND_URL)
-    else:
-        # login
-        request.session["discord_id"] = user_id
-        return RedirectResponse(settings.HTTP_FRONTEND_URL)
+    # login
+    request.session["discord_id"] = user_id
+    return RedirectResponse(settings.HTTP_FRONTEND_URL)
 
 
 @router.get("/logout")

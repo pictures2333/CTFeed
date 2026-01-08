@@ -8,6 +8,7 @@ from src.config import settings
 logger = logging.getLogger(__name__)
 
 
+# todo: 重構（錯誤處理不夠完善）
 async def fetch_ctf_events(event_id:Optional[int]=None) -> Tuple[List[Dict[str, Any]], Exception]:
     """
     events, err = await fetch_ctf_events(2987)

@@ -168,7 +168,7 @@ async def remove_event(
     
     # database
     async with get_db() as session:
-        err = await crud.delete_event(session, event_db.id)
+        err = await crud.delete_event(session, event_db.id) # todo: 改成 update_event 去 archive (不要直接刪除紀錄？)
         if not(err is None):
             logger.error(f"failed to remove event on database: {str(err)}")
             return

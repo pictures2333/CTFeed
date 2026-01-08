@@ -58,6 +58,8 @@ async def auto_register_and_check_user(
     auto_register:bool=True
 ) -> Optional[Tuple[User, discord.Member]]:
     """
+    for both Discord and fastapi (/auth/login)
+    
     check a user
     - discord_check_user(discord_id)
     - check in database

@@ -34,8 +34,8 @@ async def join_channel(bot:commands.Bot, member:discord.Member, event_db_id:int)
     category_id = settings.CTF_CHANNEL_CATETORY_ID
     category:discord.CategoryChannel = discord.utils.get(guild.categories, id=category_id)
     if category_id is None:
-        logger.error(f"Can not get category id={settings.ARCHIVE_CATEGORY_ID} from guild {guild.name} (id={guild.id})")
-        return Exception(f"Can not get category id={settings.ARCHIVE_CATEGORY_ID} from guild {guild.name} (id={guild.id})"), 500
+        logger.error(f"can not get category id={settings.ARCHIVE_CATEGORY_ID} from guild {guild.name} (id={guild.id})")
+        return Exception(f"can not get category id={settings.ARCHIVE_CATEGORY_ID} from guild {guild.name} (id={guild.id})"), 500
     
     async with get_db() as session:
         # get event from database
@@ -60,7 +60,7 @@ async def join_channel(bot:commands.Bot, member:discord.Member, event_db_id:int)
             # exists -> join
             try:
                 if channel.permissions_for(member).view_channel == True:
-                    return Exception(f"Member {member.name} (id={member.id}) has joined the channel"), 400
+                    return Exception(f"member {member.name} (id={member.id}) has joined the channel"), 400
                 
                 await channel.set_permissions(member, view_channel=True)
                 await channel.send(embed=discord.Embed(
@@ -68,7 +68,7 @@ async def join_channel(bot:commands.Bot, member:discord.Member, event_db_id:int)
                     title=f"{member.display_name} joined the channel"
                 ))
                 
-                logger.info(f"User {member.name} (id={member.id}) joined channel {channel.name} (id={channel.id}) of event {event_db.title} (id={event_db.id}, event_id={event_db.event_id})")
+                logger.info(f"user {member.name} (id={member.id}) joined channel {channel.name} (id={channel.id}) of event {event_db.title} (id={event_db.id}, event_id={event_db.event_id})")
                 return None, 200
             except Exception as e:
                 logger.error(f"failed to join channel (id={channel_id}): {str(e)}")
