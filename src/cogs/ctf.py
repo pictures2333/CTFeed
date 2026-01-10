@@ -1,4 +1,4 @@
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Literal
 from datetime import datetime, timedelta
 import logging
 
@@ -46,11 +46,12 @@ async def in_event_channel(ctx:discord.ApplicationContext) -> Optional[Event]:
     return events_db[0]
 
 
-# views - todo: 感覺可以把 custom events 也集成在這裡？
+# views
 class CTFmenu(discord.ui.View):
-    def __init__(self, bot:commands.Bot, events:List[Event]):
+    def __init__(self, bot:commands.Bot, type:Literal["ctftime", "custom"], events:List[Event]):
         super().__init__(timeout=None)
         self.bot = bot
+        self.type = type
         self.events = events
         
         # page control
@@ -67,21 +68,30 @@ class CTFmenu(discord.ui.View):
         time_now = datetime.now().timestamp()
         description = ""
         for event in self.events[start:end]:
-            mark = ""
-            if not(event.channel_id is None):
-                mark += "[⭐️ channel created]"
-            if event.start <= time_now and event.finish >= time_now:
-                mark += "[🏃 now running]"
+            if self.type == "ctftime":
+                mark = ""
+                if not(event.channel_id is None):
+                    mark += "[⭐️ channel created]"
+                if event.start <= time_now and event.finish >= time_now:
+                    mark += "[🏃 now running]"
 
-            description += f"**[Database ID: {event.id}] [{event.title}](https://ctftime.org/event/{event.event_id})**\n"
-            if len(mark) > 0:
-                description += mark + "\n"
-            description += f"Start: <t:{event.start}:F> (<t:{event.start}:R>)\n"
-            description += f"End: <t:{event.finish}:F> (<t:{event.finish}:R>)\n"
-            description += "\n"
+                description += f"**[Database ID: {event.id}] [{event.title}](https://ctftime.org/event/{event.event_id})**\n"
+                if len(mark) > 0:
+                    description += mark + "\n"
+                description += f"Start: <t:{event.start}:F> (<t:{event.start}:R>)\n"
+                description += f"End: <t:{event.finish}:F> (<t:{event.finish}:R>)\n"
+                description += "\n"
+            elif self.type == "custom":
+                description += f"**[Database ID: {event.id}] {event.title}**\n"
+                description += "\n"
         
+        if self.type == "ctftime":
+            type = "CTFTime"
+        elif self.type == "custom":
+            type = "Custom"
+
         embed = discord.Embed(
-            title=f"{settings.EMOJI} CTF events tracked ({start} / {len(self.events)})",
+            title=f"{settings.EMOJI} {type} events ({start} / {len(self.events)})",
             description=description,
             color=discord.Color.green()
         )
@@ -111,7 +121,8 @@ class CTFmenu(discord.ui.View):
             self.select_menu.options = [
                 discord.SelectOption(
                     label=f"{event.title}",
-                    description=f"Database ID: {event.id} | CTFTime event ID: {event.event_id}",
+                    description=f"Database ID: {event.id}" + \
+                        (f" | CTFTime event ID: {event.event_id}" if self.type == "ctftime" else ""),
                     value=f"{event.id}"
                 )
                 for event in _events
@@ -185,6 +196,59 @@ class CTFmenu(discord.ui.View):
         return
 
 
+# CTFTime event
+class CTFTimeEventMenu(CTFmenu):
+    def __init__(self, bot:commands.Bot, events:List[Event]):
+        super().__init__(bot, "ctftime", events)
+    
+    
+    @discord.ui.button(label="Custom events", style=discord.ButtonStyle.gray, row=2)
+    async def custom_events(self, button:discord.Button, interaction:discord.Interaction):
+        async with get_db() as session:
+            try:
+                events = await crud.read_event(session, type="custom", archived=False)
+            except Exception as e:
+                logger.error(f"failed to get events from database: {str(e)}")
+                await interaction.response.send_message("failed to get events from database", ephemeral=True)
+                return
+
+        view = CustomEventMenu(self.bot, events)
+
+        await interaction.response.send_message(embed=view.build_embed(), view=view, ephemeral=True)
+
+
+# custom event
+class CreateCustomEventModal(discord.ui.Modal):
+    def __init__(self, bot:commands.Bot, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        
+        self.bot = bot
+        
+        self.add_item(discord.ui.InputText(label="Event title", style=discord.InputTextStyle.short))
+
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        title = self.children[0].value
+        
+        try:
+            await join_channel.create_custom_event(self.bot, title)
+        except Exception as e:
+            await interaction.followup.send(content=str(e), ephemeral=True)
+        
+        await interaction.followup.send(content="Done", ephemeral=True)
+
+
+class CustomEventMenu(CTFmenu):
+    def __init__(self, bot:commands.Bot, events:List[Event]):
+        super().__init__(bot, "custom", events)
+        
+    
+    @discord.ui.button(label="Create custom event", style=discord.ButtonStyle.gray, row=2)
+    async def create_custom_event(self, button:discord.Button, interaction:discord.Interaction):
+        await interaction.response.send_modal(CreateCustomEventModal(bot=self.bot, title="Create custom event"))
+
+
 # functions
 async def ctf_event_menu(
     bot:commands.Bot,
@@ -200,7 +264,7 @@ async def ctf_event_menu(
             await ctx.response.send_message("failed to get events from database", ephemeral=True)
             return
     
-    view = CTFmenu(bot, events)
+    view = CTFTimeEventMenu(bot, events)
     
     await ctx.response.send_message(embed=view.build_embed(), view=view, ephemeral=True)
 

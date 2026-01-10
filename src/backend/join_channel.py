@@ -148,3 +148,54 @@ async def join_channel(bot:commands.Bot, member:discord.Member, event_db_id:int)
                 # ignore exception
             
             return
+
+
+async def create_custom_event(bot:commands.Bot, title:str):
+    """
+    Create a custom event
+    
+    Raises:
+        HTTPException
+    """
+    # get guild
+    guild:discord.Guild = bot.get_guild(settings.GUILD_ID)
+    if guild is None:
+        errmsg = f"invalid guild id={settings.GUILD_ID}"
+        logger.error(errmsg)
+        raise HTTPException(status_code=500, detail=errmsg)
+    
+    # get announcement channel
+    anno_channel:discord.TextChannel = guild.get_channel(settings.ANNOUNCEMENT_CHANNEL_ID)
+    if anno_channel is None:
+        errmsg = f"Can not get channnel id={settings.ANNOUNCEMENT_CHANNEL_ID} from guild {guild.name} (id={guild.id})"
+        logger.error(errmsg)
+        raise HTTPException(status_code=500, detail=errmsg)
+    
+    # database
+    async with get_db() as session:
+        try:
+            event_db = await crud.create_event(session, title=title)
+        except Exception as e:
+            logger.error(f"failed to create an event on database: {str(e)}")
+            raise HTTPException(status_code=500, detail="failed to create an event on database")
+    
+    # send notification
+    view = discord.ui.View(timeout=None)
+    view.add_item(
+        discord.ui.Button(
+            label='Join',
+            style=discord.ButtonStyle.blurple,
+            custom_id=f"ctf_join_channel:event:{event_db.id}",
+            emoji=settings.EMOJI,
+        )
+    )
+    try:
+        await anno_channel.send(embed=discord.Embed(
+            color=discord.Color.green(),
+            title=f"Click the button to join {title}"
+        ), view=view)
+    except Exception as e:
+        logger.error(f"failed to send notification to announcement channel: {str(e)}")
+        # ignore exception
+    
+    return
