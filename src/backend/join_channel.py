@@ -2,6 +2,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import logging
 
+from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
 from discord.ext import commands
 import discord
@@ -17,7 +18,47 @@ from src.config import settings
 logger = logging.getLogger("uvicorn")
 
 # functions
-async def join_channel(bot:commands.Bot, member:discord.Member, event_db_id:int):
+async def _join_channel(session:AsyncSession, channel:discord.TextChannel, event_db:Event, member:discord.Member):
+    """
+    Only join channel
+    """
+    discord_joined = False
+    try:
+        # check database
+        if await crud.read_user_in_event(session, event_db.id, member.id):
+            raise HTTPException(status_code=409, detail=f"member {member.name} (id={member.id}) has joined the channel")
+        
+        # discord
+        await channel.set_permissions(member, view_channel=True)
+        discord_joined = True
+                
+        # update database
+        await crud.join_event(session, event_db.id, member.id)
+    except Exception as e:
+        # rollback
+        if discord_joined:
+            await channel.set_permissions(member, view_channel=False)
+                
+        # raise exception
+        if isinstance(e, HTTPException):
+            raise
+        logger.error(f"user (id={member.id}) failed to join channel (id={channel.id}) of event (id={event_db.id}): {str(e)}")
+        raise HTTPException(status_code=500, detail=f"user (id={member.id}) failed to join channel (id={channel.id}) of event (id={event_db.id})")
+            
+    # send notification
+    try:
+        await channel.send(embed=discord.Embed(
+            color=discord.Color.green(),
+            title=f"{member.display_name} joined the channel"
+        ))
+    except Exception as e:
+        logger.error(f"failed to send notification to channel (id={channel.id}): {str(e)}")
+        # ignore exception
+            
+    return
+
+
+async def create_and_join_channel(bot:commands.Bot, member:discord.Member, event_db_id:int):
     """
     Join channel or create channel
     
@@ -53,31 +94,9 @@ async def join_channel(bot:commands.Bot, member:discord.Member, event_db_id:int)
         event_db:Event = events_db[0]
         ctftime_event = False if event_db.event_id is None else True
         
-        # create or join
-        if not((channel_id := event_db.channel_id) is None) and \
-            not((channel := guild.get_channel(channel_id)) is None):
-            # exists -> join
-            if channel.permissions_for(member).view_channel == True:
-                raise HTTPException(status_code=409, detail=f"member {member.name} (id={member.id}) has joined the channel")
-            
-            try:
-                await channel.set_permissions(member, view_channel=True)
-            except Exception as e:
-                logger.error(f"failed to join channel (id={channel_id}): {str(e)}")
-                raise HTTPException(status_code=500, detail=f"failed to join channel (id={channel_id})")
-            logger.info(f"user {member.name} (id={member.id}) joined channel {channel.name} (id={channel.id}) of event {event_db.title} (id={event_db.id}, event_id={event_db.event_id})")
-                
-            try:
-                await channel.send(embed=discord.Embed(
-                    color=discord.Color.green(),
-                    title=f"{member.display_name} joined the channel"
-                ))
-            except Exception as e:
-                logger.error(f"failed to send notification to channel (id={channel_id}): {str(e)}")
-                # ignore exception
-            
-            return
-        else:
+        # check whether channel was created
+        if (channel_id := event_db.channel_id) is None or \
+            (channel := guild.get_channel(channel_id)) is None:
             # not exists -> create
             event_api:Optional[Dict[str, Any]] = None
             # get event from CTFTime (CTFTime event)
@@ -93,17 +112,20 @@ async def join_channel(bot:commands.Bot, member:discord.Member, event_db_id:int)
             
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                member: discord.PermissionOverwrite(view_channel=True),
                 guild.me: discord.PermissionOverwrite(view_channel=True)
             }
             
             sc:Optional[discord.ScheduledEvent] = None
-            new_channel:Optional[discord.TextChannel] = None
+            channel:Optional[discord.TextChannel] = None
             try:
-                # create scheduled event
+                # clear old users
+                # ensure database and the ACL of discord channel is synced
+                await crud.delete_user_in_event(session, event_db.id)
+                
+                # create scheduled event - todo
                 if ctftime_event:
                     sc = await guild.create_scheduled_event(
-                        location=guild.name,
+                        location=f"https://ctftime.org/event/{event_db.event_id}",
                         name=event_db.title,
                         start_time=datetime.fromtimestamp(event_db.start),
                         end_time=datetime.fromtimestamp(event_db.finish),
@@ -112,17 +134,17 @@ async def join_channel(bot:commands.Bot, member:discord.Member, event_db_id:int)
                         raise RuntimeError(f"failed to create scheduled event on Discord")
                 
                 # create channel
-                new_channel = await guild.create_text_channel(event_db.title, category=category, overwrites=overwrites)
+                channel = await guild.create_text_channel(event_db.title, category=category, overwrites=overwrites)
                 
                 # update database
                 if ctftime_event:
-                    event_db = await crud.update_event(session, id=event_db.id, channel_id=new_channel.id, scheduled_event_id=sc.id)
+                    event_db = await crud.update_event(session, id=event_db.id, channel_id=channel.id, scheduled_event_id=sc.id)
                 else:
-                    event_db = await crud.update_event(session, id=event_db.id, channel_id=new_channel.id)
+                    event_db = await crud.update_event(session, id=event_db.id, channel_id=channel.id)
             except Exception as e:
                 # rollback
-                if not(new_channel is None):
-                    await new_channel.delete(reason="rollback")
+                if not(channel is None):
+                    await channel.delete(reason="rollback")
                 
                 if not(sc is None):
                     await sc.delete()
@@ -131,7 +153,7 @@ async def join_channel(bot:commands.Bot, member:discord.Member, event_db_id:int)
                 logger.error(f"failed to create channel for event (id={event_db.id}): {str(e)}")
                 raise HTTPException(status_code=500, detail=f"failed to create channel for event (id={event_db.id})")
             
-            logger.info(f"User {member.name} (id={member.id}) created and joined channel {new_channel.name} (id={new_channel.id})")
+            logger.info(f"User {member.name} (id={member.id}) created channel {channel.name} (id={channel.id})")
             
             try:
                 # send notification
@@ -142,12 +164,15 @@ async def join_channel(bot:commands.Bot, member:discord.Member, event_db_id:int)
                         color=discord.Color.green(),
                         title=f"{member.display_name} created the channel"
                     )
-                await new_channel.send(embed=embed)
+                await channel.send(embed=embed)
             except Exception as e:
-                logger.error(f"failed to send notification to channel (id={new_channel.id}): {str(e)}")
+                logger.error(f"failed to send notification to channel (id={channel.id}): {str(e)}")
                 # ignore exception
-            
-            return
+        
+        # channel created -> join
+        await _join_channel(session, channel, event_db, member)
+        
+        return
 
 
 async def create_custom_event(bot:commands.Bot, title:str):

@@ -450,7 +450,7 @@ class CTFBGTask(commands.Cog):
             # join channel
             await interaction.response.defer(ephemeral=True)
             try:
-                await join_channel.join_channel(self.bot, member, event_db_id)
+                await join_channel.create_and_join_channel(self.bot, member, event_db_id)
             except Exception as e:
                 await interaction.followup.send(str(e), ephemeral=True)
                 return

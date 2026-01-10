@@ -80,7 +80,7 @@ async def auto_register_and_check_user(
         except Exception as e:
             logger.error(f"failed to get user (discord_id={discord_id}) from database: {str(e)}")
             raise HTTPException(status_code=500, detail=f"failed to get user (discord_id={discord_id}) from database")
-    
+
         if len(db_users) == 0:
             # not exists -> register
             if auto_register:
@@ -116,3 +116,15 @@ async def fastapi_check_pm_user(request:Request) -> Tuple[User, discord.Member]:
     
     return await auto_register_and_check_user(discord_id, True, False)
 
+
+# for discord
+async def check_permission(ctx:discord.ApplicationContext, force_pm:bool=False) -> Optional[Tuple[User, discord.Member]]:
+    try:
+        return await auto_register_and_check_user(
+            discord_id=ctx.user.id,
+            force_pm=force_pm,
+            auto_register=True
+        )
+    except:
+        await ctx.response.send_message("Permission Denied", ephemeral=True)
+        return None

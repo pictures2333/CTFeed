@@ -38,8 +38,6 @@ data/
 *.log
 logs/
 database/
-cogs.old/
-crud.old/
 notes.txt
 
 # IDE

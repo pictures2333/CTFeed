@@ -15,18 +15,6 @@ from src.backend import security, join_channel
 logger = logging.getLogger("uvicorn")
 
 # utils
-async def check_permission(ctx:discord.ApplicationContext, force_pm:bool=False) -> Optional[Tuple[User, discord.Member]]:
-    try:
-        return await security.auto_register_and_check_user(
-            discord_id=ctx.user.id,
-            force_pm=force_pm,
-            auto_register=True
-        )
-    except:
-        await ctx.response.send_message("Permission Denied", ephemeral=True)
-        return None
-
-
 async def in_event_channel(ctx:discord.ApplicationContext) -> Optional[Event]:
     """
     Check whether the command is used in an event channel
@@ -134,7 +122,7 @@ class CTFmenu(discord.ui.View):
     @discord.ui.button(label="⬅️", style=discord.ButtonStyle.blurple, row=2)
     async def prev_button(self, button:discord.ui.Button, interaction:discord.Interaction): # endpoint
         # check user
-        u = await check_permission(interaction, False)
+        u = await security.check_permission(interaction, False)
         if u is None:
             return
         
@@ -152,7 +140,7 @@ class CTFmenu(discord.ui.View):
     @discord.ui.button(label="➡️", style=discord.ButtonStyle.blurple, row=2)
     async def next_button(self, button:discord.ui.Button, interaction:discord.Interaction): # endpoint
         # check user
-        u = await check_permission(interaction, False)
+        u = await security.check_permission(interaction, False)
         if u is None:
             return
         
@@ -170,7 +158,7 @@ class CTFmenu(discord.ui.View):
     @discord.ui.select(placeholder="Join an event!", min_values=1, max_values=1, row=1, options=[discord.SelectOption(label="dummy")])
     async def select_menu(self, select:discord.ui.Select, interaction:discord.Interaction): # endpoint
         # check user
-        u = await check_permission(interaction, False)
+        u = await security.check_permission(interaction, False)
         if u is None:
             return
         db_user, member = u
@@ -187,7 +175,7 @@ class CTFmenu(discord.ui.View):
         # join channel
         await interaction.response.defer(ephemeral=True)
         try:
-            await join_channel.join_channel(self.bot, member, event_db_id)
+            await join_channel.create_and_join_channel(self.bot, member, event_db_id)
         except Exception as e:
             await interaction.followup.send(str(e), ephemeral=True)
             return
@@ -281,7 +269,7 @@ class CTF(commands.Cog):
         multi function
         """
         # check user
-        u = await check_permission(ctx, False)
+        u = await security.check_permission(ctx, False)
         if u is None:
             return
         db_user, member = u

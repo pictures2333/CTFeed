@@ -12,7 +12,7 @@ class Status(enum.Enum):
     offline="offline"
 
 
-class Skills(enum.Enum):
+class Skills(enum.Enum): # skill as category
     web="Web"
     reverse="Reverse Engineering"
     pwn="Pwn"
@@ -42,7 +42,7 @@ user_event = Table(
     Base.metadata,
     Column("user_discord_id", ForeignKey("users.discord_id", ondelete="RESTRICT"), primary_key=True),
     Column("event_id", ForeignKey("events.id", ondelete="CASCADE"), primary_key=True),
-)
+)   
 
 
 class User(Base):
@@ -53,8 +53,8 @@ class User(Base):
     
     # attrbutes
     status = Column(Enum(Status, name="enum_status"), nullable=False, default=Status.online)
-    skills = Column(ARRAY(Enum(Skills, name="enum_skills")))
-    rhythm_games = Column(ARRAY(Enum(RhythmGames, name="enum_rhythm_games")))
+    skills = Column(ARRAY(Enum(Skills, name="enum_skills")), nullable=False, default=[])
+    rhythm_games = Column(ARRAY(Enum(RhythmGames, name="enum_rhythm_games")), nullable=False, default=[])
     
     # event
     events = relationship(

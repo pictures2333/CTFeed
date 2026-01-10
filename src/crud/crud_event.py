@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 import sqlalchemy
 
-from src.database.model import Event
+from src.database.model import Event, User, user_event
 from src.config import settings
 
 # create
@@ -93,6 +93,16 @@ async def read_event(
     return result.scalars().all()
 
 
+async def read_user_in_event(db:AsyncSession, id:int, discord_id:int) -> bool:
+    query = sqlalchemy.select(sqlalchemy.exists().where(
+        user_event.c.event_id == id,
+        user_event.c.user_discord_id == discord_id
+    ))
+    result = await db.execute(query)
+    _r = result.scalar()
+    return (_r if not(_r is None) else False)
+
+
 async def read_ctftime_event_need_archive(
     db:AsyncSession,
     finish_before:int=(datetime.now() + timedelta(days=settings.DATABASE_SEARCH_DAYS)).timestamp(),
@@ -123,7 +133,7 @@ async def update_event(
         event = (await db.execute(query)).scalar_one_or_none()
         if event is None:
             # not found -> deleted
-            return
+            raise Exception(f"event (id={id}) not found")
         
         # update
         if not(archived is None):
@@ -152,11 +162,53 @@ async def update_event(
         await db.rollback()
         raise
 
+    
+async def join_event(db:AsyncSession, event_db_id:int, discord_id:int) -> Event:
+    try:
+        # find event
+        query = sqlalchemy.select(Event) \
+            .options(selectinload(Event.users)) \
+            .where(Event.id == event_db_id)
+        event = (await db.execute(query)).scalar_one_or_none()
+        if event is None:
+            raise Exception(f"event (id={event_db_id}) not found")
+        
+        # find user
+        query = sqlalchemy.select(User).where(User.discord_id == discord_id)
+        user = (await db.execute(query)).scalar_one_or_none()
+        if user is None:
+            raise Exception(f"user (discord_id={discord_id}) not found")
+        
+        # update
+        event.users.append(user)
+        
+        # commit
+        await db.commit()
+        await db.refresh(event)
+        return event
+    except:
+        await db.rollback()
+        raise
+
 
 # delete
 async def delete_event(db:AsyncSession, id:int):
     try:
         stmt = sqlalchemy.delete(Event).where(Event.id == id)
+        await db.execute(stmt)
+        await db.commit()
+    except:
+        await db.rollback()
+        raise
+    
+    
+async def delete_user_in_event(db:AsyncSession, id:int, discord_id:Optional[int]=None):
+    try:
+        stmt = sqlalchemy.delete(user_event).where(user_event.c.event_id == id)
+        
+        if not(discord_id is None):
+            stmt = sqlalchemy.delete(user_event).where(user_event.c.user_discord_id == discord_id)
+        
         await db.execute(stmt)
         await db.commit()
     except:
