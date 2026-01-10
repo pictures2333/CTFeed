@@ -1,6 +1,5 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Literal
 from datetime import datetime, timedelta
-import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -9,29 +8,32 @@ import sqlalchemy
 from src.database.model import Event
 from src.config import settings
 
-# logger
-logger = logging.getLogger("uvicorn")
-
 # create
 async def create_event(
     db:AsyncSession,
     # event attrbutes
-    event_id:Optional[int],
     title:str,
-    start:Optional[int],
-    finish:Optional[int],
-) -> Optional[Event]:
+    event_id:Optional[int]=None,
+    start:Optional[int]=None,
+    finish:Optional[int]=None,
+) -> Event:
     """
     create event
-    
-    create a CTFTime event needs title, event_id, start, finish
-    create a custom event only needs title (title as channel name)
+    - CTFTime event
+        - title
+        - event_id (from CTFTime)
+        - start
+        - finish
+    - Custom event
+        - title (as channel name)
     """
     event = Event(title=title)
     
+    # argument check
     if not(event_id is None):
+        # CTFTime
         if start is None or finish is None:
-            return None
+            raise ValueError("start and finish should not be None")
         event.event_id = event_id
         event.start = start
         event.finish = finish
@@ -41,97 +43,67 @@ async def create_event(
         await db.commit()
         await db.refresh(event)
         return event
-    except Exception as e:
+    except:
         await db.rollback()
-        logger.error(f"failed to create event: {str(e)}")
-        return None
+        raise
 
 
 # read
-async def read_ctftime_event(
+async def read_event(
     db:AsyncSession,
-    include_archived:Optional[bool]=True,
+    type:Optional[Literal["ctftime", "custom"]]=None,
+    archived:Optional[bool]=None,
     id:Optional[int]=None,
+    channel_id:Optional[int]=None,
+    # only for CTFTime events
     event_id:Optional[int]=None,
-    channel_id:Optional[int]=None,
-    finish_after:Optional[int]=(datetime.now() + timedelta(days=settings.DATABASE_SEARCH_DAYS)).timestamp(),
-) -> Tuple[List[Event], Exception]:
-    try:
-        query = sqlalchemy.select(Event)
-        query = query.options(selectinload(Event.users))
-        query = query.options(selectinload(Event.challenges))
-        
-        if not include_archived:
-            query = query.where(Event.archived == False)
-        
-        if not(event_id is None):
-            query = query.where(Event.event_id == event_id)
-        else:
-            # where event_id != null -> CTFTime events
-            query = query.where(Event.event_id != None)
-            
-        if not(id is None):
-            query = query.where(Event.id == id)
-        
-        if not(channel_id is None):
-            query = query.where(Event.channel_id == channel_id)
-            
-        if not(finish_after is None):
+    finish_after:int=(datetime.now() + timedelta(days=settings.DATABASE_SEARCH_DAYS)).timestamp(),
+) -> List[Event]:
+    query = sqlalchemy.select(Event) \
+        .options(selectinload(Event.users)) \
+        .options(selectinload(Event.challenges))
+    
+    # arguments
+    if not(id is None):
+        query = query.where(Event.id == id)
+    
+    if not(channel_id is None):
+        query = query.where(Event.channel_id == channel_id)
+    
+    if not(archived is None):
+        # True, False
+        # None -> query both archived and not archived
+        query = query.where(Event.archived == archived)
+    
+    if not(type is None):
+        if type == "ctftime":
+            if not(event_id is None):
+                query = query.where(Event.event_id == event_id)
+            else:
+                query = query.where(Event.event_id != None)
+                
             query = query.where(Event.finish >= finish_after)
-        
-        query = query.order_by(sqlalchemy.desc(Event.finish))
-        result = await db.execute(query)
-        return result.scalars().all(), None
-    except Exception as e:
-        logger.error(f"failed to read events: {str(e)}")
-        return [], e
+            query = query.order_by(sqlalchemy.asc(Event.finish))
+        elif type == "custom":
+            query = query.where(Event.event_id == None)
+        else:
+            raise ValueError("type should be ctftime or custom")
     
-    
-async def read_custom_event(
-    db:AsyncSession,
-    include_archived:Optional[bool]=True,
-    id:Optional[int]=None,
-    channel_id:Optional[int]=None,
-) -> Tuple[List[Event], Exception]:
-    try:
-        query = sqlalchemy.select(Event)
-        query = query.options(selectinload(Event.users))
-        query = query.options(selectinload(Event.challenges))
-        
-        if not include_archived:
-            query = query.where(Event.archived == False)
-            
-        # event_id is None -> custom events
-        query = query.where(Event.event_id == None)
-        
-        if not(channel_id is None):
-            query = query.where(Event.channel_id == channel_id)
-            
-        if not(id is None):
-            query = query.where(Event.id == id)
-            
-        result = await db.execute(query)
-        return result.scalars().all(), None
-    except Exception as e:
-        logger.error(f"failed to read events: {str(e)}")
-        return [], e
-    
+    result = await db.execute(query)
+    return result.scalars().all()
+
 
 async def read_ctftime_event_need_archive(
     db:AsyncSession,
-    finish_before:Optional[int]=(datetime.now() + timedelta(days=settings.DATABASE_SEARCH_DAYS)).timestamp(),
-) -> Tuple[List[Event], Exception]:
-    try:
-        query = sqlalchemy.select(Event) \
-            .options(selectinload(Event.users)) \
-            .options(selectinload(Event.challenges)) \
-            .where(Event.archived == False) \
-            .where(Event.finish < finish_before)
-        result = await db.execute(query)
-        return result.scalars().all(), None
-    except Exception as e:
-        logger.error(f"failed to read events: {str(e)}")
-        return [], e
+    finish_before:int=(datetime.now() + timedelta(days=settings.DATABASE_SEARCH_DAYS)).timestamp(),
+) -> List[Event]:
+    query = sqlalchemy.select(Event) \
+        .options(selectinload(Event.users)) \
+        .options(selectinload(Event.challenges)) \
+        .where(Event.archived == False) \
+        .where(Event.finish < finish_before)
+    result = await db.execute(query)
+    return result.scalars().all()
 
 
 # update
@@ -144,13 +116,14 @@ async def update_event(
     finish:Optional[int]=None,
     channel_id:Optional[int]=None,
     scheduled_event_id:Optional[int]=None,
-) -> Optional[Event]:
+) -> Event:
     try:
         # find
         query = sqlalchemy.select(Event).where(Event.id == id)
         event = (await db.execute(query)).scalar_one_or_none()
         if event is None:
-            return None
+            # not found -> deleted
+            return
         
         # update
         if not(archived is None):
@@ -175,23 +148,17 @@ async def update_event(
         await db.commit()
         await db.refresh(event)
         return event
-    except Exception as e:
+    except:
         await db.rollback()
-        logger.error(f"failed to update event(id={id}): {str(e)}")
-        return None
+        raise
 
 
 # delete
-async def delete_event(
-    db:AsyncSession,
-    id:int,
-) -> Exception:
+async def delete_event(db:AsyncSession, id:int):
     try:
         stmt = sqlalchemy.delete(Event).where(Event.id == id)
         await db.execute(stmt)
         await db.commit()
-        return None
-    except Exception as e:
+    except:
         await db.rollback()
-        logger.error(f"failed to delete event: {str(e)}")
-        return e
+        raise

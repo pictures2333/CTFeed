@@ -8,11 +8,7 @@ from src.config import settings
 logger = logging.getLogger("uvicorn")
 
 
-async def fetch_ctf_events(event_id:Optional[int]=None) -> Tuple[List[Dict[str, Any]], Optional[Exception]]:
-    """
-    events, err = await fetch_ctf_events(2987)
-    """
-    
+async def fetch_ctf_events(event_id:Optional[int]=None) -> List[Dict[str, Any]]:
     params = {
         "limit": 20,
         "start": int(datetime.now().timestamp()),
@@ -20,28 +16,23 @@ async def fetch_ctf_events(event_id:Optional[int]=None) -> Tuple[List[Dict[str, 
     
     url = settings.CTFTIME_API_URL
     if not(event_id is None):
-        # for example: "https://ctftime.org/api/v1/events/2345"
+        # for example: "https://ctftime.org/api/v1/events/2345/"
         url = f"{url}{event_id}/"
     
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params) as response:
-                if response.status == 200:
-                    if not(event_id is None):
-                        return [await response.json()], None
-                    
-                    return await response.json(), None
-                elif response.status == 404:
-                    return [], None
-                else:
-                    logger.error(f"API returned {response.status} (with event_id={event_id})")
-                    return [], Exception(f"API returned {response.status} (with event_id={event_id})")
-    except Exception as e:
-        logger.error(f"API error: {e}")
-        return [], e
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, params=params) as response:
+            if response.status == 200:
+                if not(event_id is None):
+                    return [await response.json()]
+                
+                return await response.json()
+            elif response.status == 404:
+                return []
+            else:
+                raise RuntimeError(f"API returned {response.status} (with event_id={event_id})")
 
 
-async def fetch_team_info(team_id):
+async def fetch_team_info(team_id) -> Tuple[Optional[str], Optional[str]]:
     url = f"{settings.TEAM_API_URL}{team_id}/"
     try:
         async with aiohttp.ClientSession() as session:

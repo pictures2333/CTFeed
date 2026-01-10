@@ -16,15 +16,15 @@ logger = logging.getLogger("uvicorn")
 
 # utils
 async def check_permission(ctx:discord.ApplicationContext, force_pm:bool=False) -> Optional[Tuple[User, discord.Member]]:
-    u = await security.auto_register_and_check_user(
-        discord_id=ctx.user.id,
-        force_pm=force_pm,
-        auto_register=True
-    )
-    if u is None:
+    try:
+        return await security.auto_register_and_check_user(
+            discord_id=ctx.user.id,
+            force_pm=force_pm,
+            auto_register=True
+        )
+    except:
         await ctx.response.send_message("Permission Denied", ephemeral=True)
         return None
-    return u
 
 
 async def in_event_channel(ctx:discord.ApplicationContext) -> Optional[Event]:
@@ -34,25 +34,19 @@ async def in_event_channel(ctx:discord.ApplicationContext) -> Optional[Event]:
     guild:discord.Guild = ctx.guild
     
     async with get_db() as session:
-        event_db, err = await crud.read_ctftime_event(session, include_archived=True, channel_id=ctx.channel_id)
-        if not(err is None):
+        try:
+            events_db = await crud.read_event(session, type=None, archived=True, channel_id=ctx.channel_id)
+        except Exception as e:
+            logger.error(f"failed to get event (channel_id={ctx.channel_id}) from database: {str(e)}")
             return None
         
-        if len(event_db) == 0:
-            # maybe custom event
-            event_db, err = await crud.read_custom_event(session, include_archived=True, channel_id=ctx.channel_id)
-            if not (err is None):
-                return None
-            if len(event_db) == 0:
-                return None
-            event_db = event_db[0]
-        else:
-            # ctftime event
-            event_db = event_db[0]
+    if len(events_db) == 0:
+        return None
         
-    return event_db
+    return events_db[0]
 
-# views
+
+# views - todo: 感覺可以把 custom events 也集成在這裡？
 class CTFmenu(discord.ui.View):
     def __init__(self, bot:commands.Bot, events:List[Event]):
         super().__init__(timeout=None)
@@ -126,7 +120,7 @@ class CTFmenu(discord.ui.View):
             self.select_menu.disabled = True
     
     
-    @discord.ui.button(label="⬅️", style=discord.ButtonStyle.blurple, row=2,)
+    @discord.ui.button(label="⬅️", style=discord.ButtonStyle.blurple, row=2)
     async def prev_button(self, button:discord.ui.Button, interaction:discord.Interaction): # endpoint
         # check user
         u = await check_permission(interaction, False)
@@ -181,9 +175,10 @@ class CTFmenu(discord.ui.View):
         
         # join channel
         await interaction.response.defer(ephemeral=True)
-        err, code = await join_channel.join_channel(self.bot, member, event_db_id)
-        if not(err is None):
-            await interaction.followup.send(str(err), ephemeral=True)
+        try:
+            await join_channel.join_channel(self.bot, member, event_db_id)
+        except Exception as e:
+            await interaction.followup.send(str(e), ephemeral=True)
             return
         
         await interaction.followup.send("Done", ephemeral=True)
@@ -198,10 +193,12 @@ async def ctf_event_menu(
     member:discord.Member
 ):
     async with get_db() as session:
-        events, err = await crud.read_ctftime_event(session, include_archived=False)
-    if not(err is None):
-        await ctx.response.send_message("failed to get events from database", ephemeral=True)
-        return
+        try:
+            events = await crud.read_event(session, type="ctftime", archived=False)
+        except Exception as e:
+            logger.error(f"failed to get events from database: {str(e)}")
+            await ctx.response.send_message("failed to get events from database", ephemeral=True)
+            return
     
     view = CTFmenu(bot, events)
     

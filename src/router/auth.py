@@ -60,10 +60,7 @@ async def login(
         raise HTTPException(500)
     
     # check permission and login (or register)
-    u = await security.auto_register_and_check_user(user_id, False, True)
-    if u is None:
-        raise HTTPException(403)
-    db_user, member = u
+    db_user, member = await security.auto_register_and_check_user(user_id, False, True)
     
     # login
     request.session["discord_id"] = user_id

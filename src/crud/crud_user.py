@@ -1,5 +1,4 @@
 from typing import List, Optional, Tuple
-import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -7,51 +6,30 @@ import sqlalchemy
 
 from src.database.model import User
 
-# logger
-logger = logging.getLogger("uvicorn")
-
 # create
-async def create_user(
-    db:AsyncSession,
-    discord_id:int
-) -> Optional[User]:
-    """
-    user:Optional[User] = await create_user(db, discord_id)
-    """
+async def create_user(db:AsyncSession, discord_id:int) -> User:
     user = User(discord_id=discord_id)
     
     try:
         db.add(user)
         await db.commit()
         await db.refresh(user)
-    except Exception as e:
+        return user
+    except:
         await db.rollback()
-        logger.error(f"failed to create user: {str(e)}")
-        return None
-
-    return user
+        raise
 
 
 # read
-async def read_user(
-    db:AsyncSession,
-    discord_id:Optional[int]=None,
-) -> Tuple[List[User], Exception]:
-    """
-    users, err = await read_user(db, discord_id)
-    """
-    try:
-        query = sqlalchemy.select(User)
-        query = query.options(selectinload(User.events))
+async def read_user(db:AsyncSession, discord_id:Optional[int]=None) -> List[User]:
+    query = sqlalchemy.select(User) \
+        .options(selectinload(User.events))
         
-        if not(discord_id is None):
-            query = query.where(User.discord_id == discord_id)
+    if not(discord_id is None):
+        query = query.where(User.discord_id == discord_id)
         
-        result = await db.execute(query)
-        return result.scalars().all(), None
-    except Exception as e:
-        logger.error(f"failed to read users: {str(e)}")
-        return [], e
+    result = await db.execute(query)
+    return result.scalars().all(), None
 
 
 # update

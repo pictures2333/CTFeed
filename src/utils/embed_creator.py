@@ -12,22 +12,14 @@ async def create_event_embed(event, title:str):
     start_time_utc = datetime.fromisoformat(event["start"].replace("Z", "+00:00"))
     finish_time_utc = datetime.fromisoformat(event["finish"].replace("Z", "+00:00"))
 
-    #taipei_tz = pytz.timezone("Asia/Taipei")
-    #start_time_taipei = start_time_utc.astimezone(taipei_tz)
-    #finish_time_taipei = finish_time_utc.astimezone(taipei_tz)
-
     color = discord.Color.green()
 
     organizer_info = []
     first_country_flag = ""
     if event.get("organizers"):
-        logger.info(f"Processing {len(event['organizers'])} organizers")
         for i, org in enumerate(event["organizers"][:3]):
             try:
                 country_code, team_name = await fetch_team_info(org["id"])
-                logger.info(
-                    f"Organizer {org['name']} (ID: {org['id']}) country: {country_code}"
-                )
                 country_flag, country_name = get_country_info(country_code)
                 if i == 0:
                     first_country_flag = country_flag
