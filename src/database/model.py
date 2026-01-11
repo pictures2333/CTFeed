@@ -1,18 +1,18 @@
 import enum
 
-from sqlalchemy import Column, String, BigInteger, ForeignKey, CheckConstraint, Enum, ARRAY, Table, Boolean
+from sqlalchemy import Column, String, BigInteger, ForeignKey, Enum, ARRAY, Table, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
 Base = declarative_base()
 
 # User
-class Status(enum.Enum):
+class Status(str, enum.Enum):
     online="online"
     offline="offline"
 
 
-class Skills(enum.Enum): # skill as category
+class Skills(str, enum.Enum): # skill as category
     web="Web"
     reverse="Reverse Engineering"
     pwn="Pwn"
@@ -27,7 +27,7 @@ class Skills(enum.Enum): # skill as category
     network="Network"
 
 
-class RhythmGames(enum.Enum):
+class RhythmGames(str, enum.Enum):
     pjsk="Project Sekai"
     phigros="Phigros"
     arcaea="Arcaea"

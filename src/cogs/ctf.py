@@ -192,6 +192,11 @@ class CTFTimeEventMenu(CTFmenu):
     
     @discord.ui.button(label="Custom events", style=discord.ButtonStyle.gray, row=2)
     async def custom_events(self, button:discord.Button, interaction:discord.Interaction):
+        # check user
+        u = await security.check_permission(interaction, False)
+        if u is None:
+            return
+        
         async with get_db() as session:
             try:
                 events = await crud.read_event(session, type="custom", archived=False)
@@ -234,6 +239,11 @@ class CustomEventMenu(CTFmenu):
     
     @discord.ui.button(label="Create custom event", style=discord.ButtonStyle.gray, row=2)
     async def create_custom_event(self, button:discord.Button, interaction:discord.Interaction):
+        # check user
+        u = await security.check_permission(interaction, False)
+        if u is None:
+            return
+        
         await interaction.response.send_modal(CreateCustomEventModal(bot=self.bot, title="Create custom event"))
 
 

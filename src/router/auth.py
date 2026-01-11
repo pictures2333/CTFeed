@@ -4,11 +4,16 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import RedirectResponse
 from authlib.integrations.starlette_client import OAuth
 from sqlalchemy.ext.asyncio import AsyncSession
+import discord
 
 from src.config import settings
 from src.backend import security
+from src.backend import get_user
 from src.database.database import fastapi_get_db
 from src import crud
+from src import schema
+from src.database import model
+from src.backend.security import fastapi_check_user
 
 # logging
 logger = logging.getLogger("uvicorn")
@@ -74,5 +79,37 @@ async def logout(request:Request):
 
 
 # read
+@router.get("/me")
+async def read_me(
+    db:AsyncSession=Depends(fastapi_get_db),
+    u:model.User=Depends(fastapi_check_user)
+) -> schema.User:
+    db_user:model.User = u[0]
+    return (await get_user.get_user(db_user.discord_id))
+
 
 # update
+@router.patch("/me")
+async def update_me(
+    data:schema.UpdateUser,
+    db:AsyncSession=Depends(fastapi_get_db),
+    u:model.User=Depends(fastapi_check_user),
+) -> schema.User:
+    db_user:model.User = u[0]
+    discord_id = db_user.discord_id
+    
+    try:
+        # update user
+        await crud.update_user(
+            db,
+            discord_id=discord_id,
+            status=data.status,
+            skills=data.skills,
+            rhythm_games=data.rhythm_games
+        )
+        
+        # get again
+        return (await get_user.get_user(discord_id))
+    except Exception as e:
+        logger.error(f"failed to update user (discord_id={discord_id}) on database: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"failed to update user (discord_id={discord_id}) on database")

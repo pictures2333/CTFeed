@@ -26,7 +26,7 @@ class UserMenuView(discord.ui.View):
     
     def build_embed(self, db_user:User, member:discord.Member) -> discord.Embed:
         color = discord.Color.green() if db_user.status == Status.online else discord.Color.red()
-        embed = discord.Embed(title=f"{member.display_name} (discord_id={member.id})", color=color)
+        embed = discord.Embed(title=f"{member.display_name} ({member.name}, discord_id={member.id})", color=color)
         embed.add_field(name="Status", value=db_user.status.value, inline=False)
         skills = "" if len(db_user.skills) != 0 else "(null)"
         for s in db_user.skills:

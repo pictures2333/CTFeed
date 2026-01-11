@@ -14,6 +14,11 @@ from src.utils import ctf_api
 from src.utils.embed_creator import create_event_embed
 from src.config import settings
 
+"""
+todo:
+- ACL of discord channel 跟 database 實際上是兩份資料，會有不同步的問題，在管理員手動修改權限，或是成員離開時（這部份我是考慮讓管理員手動處理）
+"""
+
 # logging
 logger = logging.getLogger("uvicorn")
 
@@ -26,12 +31,15 @@ async def _join_channel(session:AsyncSession, channel:discord.TextChannel, event
     try:
         # check database
         if await crud.read_user_in_event(session, event_db.id, member.id):
-            raise HTTPException(status_code=409, detail=f"member {member.name} (id={member.id}) has joined the channel")
+            if channel.permissions_for(member).view_channel == True:
+                raise HTTPException(status_code=409, detail=f"member {member.name} (id={member.id}) has joined the channel")
+            else:
+                await crud.delete_user_in_event(session, event_db.id, member.id)
         
         # discord
         await channel.set_permissions(member, view_channel=True)
         discord_joined = True
-                
+        
         # update database
         await crud.join_event(session, event_db.id, member.id)
     except Exception as e:
@@ -124,6 +132,15 @@ async def create_and_join_channel(bot:commands.Bot, member:discord.Member, event
                 
                 # create scheduled event - todo
                 if ctftime_event:
+                    # try delete old scheduled event
+                    try:
+                        if not((_sc_id := event_db.scheduled_event_id) is None) and \
+                            not((_sc := guild.get_scheduled_event(_sc_id)) is None):
+                            await _sc.delete()
+                    except Exception as e:
+                        logger.error(f"failed to delete old scheduled event (id={event_db.scheduled_event_id}) of event (id={event_db.id}): {str(e)}")
+                        # ignore exception
+                    
                     sc = await guild.create_scheduled_event(
                         location=f"https://ctftime.org/event/{event_db.event_id}",
                         name=event_db.title,
