@@ -94,7 +94,7 @@ async def update_me(
     data:schema.UpdateUser,
     db:AsyncSession=Depends(fastapi_get_db),
     u:model.User=Depends(fastapi_check_user),
-) -> schema.User:
+) -> schema.General:
     db_user:model.User = u[0]
     discord_id = db_user.discord_id
     
@@ -109,7 +109,7 @@ async def update_me(
         )
         
         # get again
-        return (await get_user.get_user(discord_id))
+        return schema.General(success=True, message="ok")
     except Exception as e:
         logger.error(f"failed to update user (discord_id={discord_id}) on database: {str(e)}")
         raise HTTPException(status_code=500, detail=f"failed to update user (discord_id={discord_id}) on database")

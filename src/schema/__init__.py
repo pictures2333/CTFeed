@@ -1,5 +1,5 @@
 from .general import General
-from .user import User, UpdateUser, DiscordUser
+from .user import User, UserSimple, UpdateUser, DiscordUser
 from .event import EventSimple, Event
 
 User.model_rebuild()

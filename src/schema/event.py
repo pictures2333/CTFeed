@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, List
+from typing import Optional, List, Literal
 from pydantic import BaseModel, ConfigDict
 
 class EventSimple(BaseModel):
@@ -16,8 +16,11 @@ class EventSimple(BaseModel):
     
     channel_id:Optional[int]=None
     scheduled_event_id:Optional[int]=None
+    
+    # extra attrbutes
+    now_running:Optional[bool]=None
+    type:Literal["ctftime", "custom"]
 
 
 class Event(EventSimple):
-    users:List["User"]
-    #challenges
+    users:List["UserSimple"]

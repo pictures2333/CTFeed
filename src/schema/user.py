@@ -19,7 +19,7 @@ class DiscordUser(BaseModel):
     name:str
 
 
-class User(BaseModel):
+class UserSimple(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     
     discord_id:int
@@ -28,6 +28,8 @@ class User(BaseModel):
     skills:List[Skills]
     rhythm_games:List[RhythmGames]
     
-    events:List["EventSimple"]
-    
     discord:Optional[DiscordUser]=None
+
+
+class User(UserSimple):
+    events:List["EventSimple"]

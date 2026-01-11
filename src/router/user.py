@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 import logging
 
 from discord.ext import commands
@@ -19,21 +19,26 @@ logger = logging.getLogger("uvicorn")
 router = APIRouter(prefix="/user")
 
 @router.get("/")
+@router.get("/{discord_id}")
 async def read_all_users(
+    discord_id:Optional[int]=None,
     u=Depends(fastapi_check_user),
     db:AsyncSession=Depends(fastapi_get_db),
     bot:commands.Bot=Depends(get_bot)
 ) -> List[schema.User]:
     try:
-        db_users = await crud.read_user(db)
+        db_users = await crud.read_user(db, discord_id=discord_id)
+        if not(discord_id is None) and len(db_users) == 0:
+            raise HTTPException(status_code=404)
         
         r = []
         for u in db_users:
             try:
                 _ = await get_user.get_user(u.discord_id)
-            except:
-                pass
-            r.append(_)
+                r.append(_)
+            except Exception as e:
+                if not(discord_id is None):
+                    raise HTTPException(status_code=404)
         
         return r
     except Exception as e:
@@ -41,23 +46,3 @@ async def read_all_users(
             raise
         logger.error(f"failed to get users: {str(e)}")
         raise HTTPException(status_code=500, detail=f"failed to get users")
-
-
-@router.get("/{discord_id}")
-async def read_user(
-    discord_id:int,
-    u=Depends(fastapi_check_user),
-    db:AsyncSession=Depends(fastapi_get_db),
-    bot:commands.Bot=Depends(get_bot),
-) -> schema.User:
-    try:
-        db_users = await crud.read_user(db, discord_id=discord_id)
-        if len(db_users) == 0:
-            raise HTTPException(status_code=404)
-        
-        return (await get_user.get_user(db_users[0].discord_id))
-    except Exception as e:
-        if isinstance(e, HTTPException):
-            raise
-        logger.error(f"failed to get user (discord_id={discord_id}) from database: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"failed to get user (discord_id={discord_id}) from database")
