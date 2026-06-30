@@ -55,6 +55,8 @@ Thumbs.db
 
 # Database (for developement)
 db_data
+.local-test-db/
+docker-compose.local-db.yml
 
 # Misc
 src/old/

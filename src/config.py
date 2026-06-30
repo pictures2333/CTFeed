@@ -36,9 +36,6 @@ class Settings(BaseSettings):
     # Database configuration
     DATABASE_URL:str
     
-    # Metadata
-    COMMIT_ID:str="unknown"
-
     model_config = SettingsConfigDict(env_file=".env")
 
 settings = Settings()
