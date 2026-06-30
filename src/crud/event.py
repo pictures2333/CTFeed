@@ -340,6 +340,7 @@ async def read_event_many(
     session:AsyncSession,
     type:Literal["ctftime", "custom"],
     archived:Optional[bool]=None,
+    channel_created:Optional[bool]=None,
     limit:Optional[int]=None,
     # ctftime events
     finish_after:Optional[int]=None,
@@ -368,6 +369,7 @@ async def read_event_many(
     :param session:
     :param type: Search ``ctftime`` or ``custom`` Events.
     :param archived: Search archived, non-archived Events, or ``None`` to search both types of Events.
+    :param channel_created: Search Events with channel, without channel, or ``None`` to search both.
     :param limit:
     :param finish_after:
     :param finish_before:
@@ -435,6 +437,12 @@ async def read_event_many(
     
     if archived is not None:
         stmt = stmt.where(Event.archived == archived)
+    
+    if channel_created is not None:
+        if channel_created is True:
+            stmt = stmt.where(Event.channel_id != None)
+        else:
+            stmt = stmt.where(Event.channel_id == None)
 
     # execute
     try:

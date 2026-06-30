@@ -146,6 +146,7 @@ async def _detect_event_update_and_remove():
                 session=session,
                 type="ctftime",
                 archived=False,
+                channel_created=None,
                 limit=None,
                 finish_after=int((datetime.now(timezone.utc) + timedelta(days=settings.DATABASE_SEARCH_DAYS)).timestamp()),
                 finish_before=None,

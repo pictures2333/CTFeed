@@ -64,6 +64,10 @@
     - 下一頁：帶上前一頁最後一筆 ``id`` 到 ``before_id``
 - 不能傳 ``finish_after`` / ``finish_before``
 - ``archived`` 可選，用於限制封存狀態
+- ``channel_created`` 可選：
+    - ``True``：只查已建立 / 已綁定 Discord channel 的 Event
+    - ``False``：只查尚未建立 / 尚未綁定 Discord channel 的 Event
+    - ``None``：不限制 channel 狀態
 
 #### 設計說明
 - ``ctftime`` 分頁採用複合游標條件：
@@ -83,6 +87,8 @@
 
 #### 設計說明
 - View timeout 設為 ``60s``，避免互動元件長時間掛著
+- 預設只顯示已建立 / 已綁定 Discord channel 的 Event（``channel_created=True``）
+- ``Created Channels`` 按鈕可切換是否只顯示已建立 channel 的 Event；切換時會建立新的 ``EventMenu``，重置頁碼與快取
 - ``ctftime`` 清單採「首次查詢後快取」：
   - 第一次 ``build_embed_and_view()`` 查一次資料庫
   - 後續翻頁只吃記憶體快取，不重查 DB

@@ -131,6 +131,7 @@ async def _recover_scheduled_events():
                 session,
                 type="ctftime",
                 archived=False,
+                channel_created=None,
                 limit=None,
                 finish_after=int((datetime.now(timezone.utc) + timedelta(days=settings.DATABASE_SEARCH_DAYS)).timestamp()),
                 finish_before=None,

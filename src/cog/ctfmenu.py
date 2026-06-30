@@ -30,11 +30,18 @@ def _format_channel_info(guild: Optional[discord.Guild], channel_id: Optional[in
 
 # views
 class EventMenu(discord.ui.View):
-    def __init__(self, bot: commands.Bot, owner_id: int, type: Literal["ctftime", "custom"]):
+    def __init__(
+        self,
+        bot: commands.Bot,
+        owner_id: int,
+        type: Literal["ctftime", "custom"],
+        channel_created_only: bool = True
+    ):
         super().__init__(timeout=60)
         self.bot = bot
         self.owner_id = owner_id
         self.type = type
+        self.channel_created_only = channel_created_only
         self.page = 0
         self.per_page = 5
         self.events: List[model.Event] = []
@@ -88,6 +95,12 @@ class EventMenu(discord.ui.View):
             ]
 
         self.switch_menu.label = "Custom Events" if self.type == "ctftime" else "CTFTime Events"
+        self.toggle_channel_filter.label = (
+            "Created Channels: On" if self.channel_created_only else "Created Channels: Off"
+        )
+        self.toggle_channel_filter.style = (
+            discord.ButtonStyle.green if self.channel_created_only else discord.ButtonStyle.grey
+        )
 
         if self.type == "custom":
             if self.create_custom_event not in self.children:
@@ -106,6 +119,7 @@ class EventMenu(discord.ui.View):
                             session=session,
                             type="ctftime",
                             archived=False,
+                            channel_created=True if self.channel_created_only else None,
                             limit=None,
                             finish_after=int((datetime.now(timezone.utc) + timedelta(days=settings.DATABASE_SEARCH_DAYS)).timestamp()),
                             finish_before=None,
@@ -129,6 +143,7 @@ class EventMenu(discord.ui.View):
                             session=session,
                             type="custom",
                             archived=False,
+                            channel_created=True if self.channel_created_only else None,
                             limit=self.per_page + 1,
                             finish_after=None,
                             finish_before=None,
@@ -185,11 +200,12 @@ class EventMenu(discord.ui.View):
             description = "\n".join(lines)
 
         embed = discord.Embed(title=title, description=description, color=discord.Color.green())
+        filter_text = "Created channels only" if self.channel_created_only else "All channel states"
         if self.type == "ctftime":
-            embed.set_footer(text=f"Page {self.page + 1}/{total_pages} | Total {len(self.events)}")
+            embed.set_footer(text=f"Page {self.page + 1}/{total_pages} | Total {len(self.events)} | {filter_text}")
             await self._refresh_view(total_pages)
         else:
-            embed.set_footer(text=f"Page {self.page + 1}")
+            embed.set_footer(text=f"Page {self.page + 1} | {filter_text}")
             await self._refresh_view()
 
         return embed
@@ -255,7 +271,21 @@ class EventMenu(discord.ui.View):
         if await self._check_permission(interaction) is None:
             return
         target_type = "custom" if self.type == "ctftime" else "ctftime"
-        target_view = EventMenu(self.bot, self.owner_id, target_type)
+        target_view = EventMenu(self.bot, self.owner_id, target_type, self.channel_created_only)
+        embed = await target_view.build_embed_and_view()
+        await interaction.response.edit_message(embed=embed, view=target_view)
+
+
+    @discord.ui.button(style=discord.ButtonStyle.green, label="Created Channels: On", row=2)
+    async def toggle_channel_filter(self, button: discord.ui.Button, interaction: discord.Interaction):
+        if await self._check_permission(interaction) is None:
+            return
+        target_view = EventMenu(
+            self.bot,
+            self.owner_id,
+            self.type,
+            channel_created_only=not self.channel_created_only
+        )
         embed = await target_view.build_embed_and_view()
         await interaction.response.edit_message(embed=embed, view=target_view)
 
