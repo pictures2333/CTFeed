@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, List, Optional, Callable, Awaitable, Dict
 import enum
 
 from sqlalchemy import (
@@ -13,6 +13,8 @@ from sqlalchemy.orm import relationship, Mapped, mapped_column
 from pydantic import BaseModel
 import discord
 
+from src.backend import config_test
+
 Base = declarative_base()
 
 # Config
@@ -26,7 +28,9 @@ class ConfigInfo(BaseModel):
     name:str
     data_type:Any
     config_type:ConfigType
-    select_type:Any     # discord.ComponentType
+    select_type:Any                 # discord.ComponentType
+    channel_type:Optional[Any]      # discord.ChannelType
+    test_func:Optional[Callable[[discord.Guild, Dict[str, Any], str], Awaitable[None]]] = None
     description:str
 
 
@@ -36,6 +40,8 @@ config_info = {
         data_type=int,
         config_type=ConfigType.CHANNEL,
         select_type=discord.ComponentType.channel_select,
+        channel_type=discord.ChannelType.text,
+        test_func=config_test.test_send_message,
         description="The channel which announcements send to"
     ),
     "CTF_CHANNEL_CATEGORY_ID": ConfigInfo(
@@ -43,6 +49,8 @@ config_info = {
         data_type=int,
         config_type=ConfigType.CATEGORY,
         select_type=discord.ComponentType.channel_select,
+        channel_type=discord.ChannelType.category,
+        test_func=config_test.test_ctf_channel_category,
         description="The category which CTF channels belong to"
     ),
     "ARCHIVE_CATEGORY_ID": ConfigInfo(
@@ -50,6 +58,8 @@ config_info = {
         data_type=int,
         config_type=ConfigType.CATEGORY,
         select_type=discord.ComponentType.channel_select,
+        channel_type=discord.ChannelType.category,
+        test_func=config_test.test_archive_category,
         description="The category which archived CTF channels belong to"
     ),
     "PM_ROLE_ID": ConfigInfo(
@@ -57,6 +67,8 @@ config_info = {
         data_type=int,
         config_type=ConfigType.ROLE,
         select_type=discord.ComponentType.role_select,
+        channel_type=None,
+        test_func=None,
         description="The role for project managers"
     ),
     "MEMBER_ROLE_ID": ConfigInfo(
@@ -64,6 +76,8 @@ config_info = {
         data_type=int,
         config_type=ConfigType.ROLE,
         select_type=discord.ComponentType.role_select,
+        channel_type=None,
+        test_func=None,
         description="The role for members"
     )
 }
@@ -175,7 +189,3 @@ class Event(Base):
         secondary=user_event,
         back_populates="events"
     )
-    
-    # challenge: todo
-
-# challenge: todo

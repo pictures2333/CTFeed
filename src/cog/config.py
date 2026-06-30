@@ -43,26 +43,14 @@ class ConfigMenu(discord.ui.View):
 
 
     def _build_overview_embed(self, config_info) -> discord.Embed:
-        color = discord.Color.green()
-        invalid_count = 0
-        for c in config_info.config:
-            if not c.ok:
-                color = discord.Color.red()
-                invalid_count += 1
-
         embed = discord.Embed(
             title="Server Configuration",
-            description=(
-                "All settings are valid."
-                if invalid_count == 0
-                else f"{invalid_count} setting(s) need attention."
-            ),
-            color=color
+            description="Select a setting to edit.",
+            color=discord.Color.green()
         )
         for c in config_info.config:
-            status = "OK" if c.ok else "INVALID"
             embed.add_field(
-                name=f"[{status}] {c.key}",
+                name=c.key,
                 value=c.message,
                 inline=False
             )
@@ -71,13 +59,11 @@ class ConfigMenu(discord.ui.View):
 
     def _build_detail_embed(self, config_info) -> discord.Embed:
         c = config_info.config[0]
-        status = "OK" if c.ok else "INVALID"
         embed = discord.Embed(
             title=f"Edit {c.key}",
             description=c.description,
-            color=discord.Color.green() if c.ok else discord.Color.red()
+            color=discord.Color.green()
         )
-        embed.add_field(name="Status", value=status, inline=True)
         embed.add_field(name="Key", value=f"`{c.key}`", inline=True)
         embed.add_field(name="Current value", value=c.message, inline=False)
         return embed
@@ -131,6 +117,14 @@ class ConfigMenu(discord.ui.View):
             self.back.callback = self.on_back
             self.add_item(self.back)
 
+            self.test = discord.ui.Button(
+                label="Test",
+                style=discord.ButtonStyle.blurple,
+                row=2
+            )
+            self.test.callback = self.on_test
+            self.add_item(self.test)
+
         self.refresh = discord.ui.Button(
             label="Refresh",
             style=discord.ButtonStyle.grey,
@@ -173,6 +167,38 @@ class ConfigMenu(discord.ui.View):
         self.selected_key = None
         embed = await self.build_embed_and_view()
         await interaction.response.edit_message(embed=embed, view=self)
+        return
+
+
+    async def on_test(self, interaction:discord.Interaction):
+        # check permission
+        if not (await security.discord_check_administrator(interaction)):
+            return
+
+        selected_key = self.selected_key
+        if selected_key is None:
+            await interaction.response.send_message("Select a setting first", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            await config.test_config(selected_key)
+        except Exception as e:
+            detail = getattr(e, "detail", None)
+            embed = discord.Embed(
+                title=f"Test {selected_key} failed",
+                description=str(detail if detail is not None else e),
+                color=discord.Color.red()
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title=f"Test {selected_key} passed",
+            color=discord.Color.green()
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
         return
 
 
