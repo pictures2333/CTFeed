@@ -22,3 +22,9 @@
     - src.config (Settings) - 添加``settings``(cache)成員、修改 ``settings_lock``註解
     - src.crud.config - 添加``create_or_update_config``參數
 - Config 在 discord 端或是 api 端做 log (不在 backend，因為 backend 沒有拿使用者資訊)
+- Discord config menu:
+    - 總覽頁列出所有設定，顯示設定 key、狀態與目前值
+    - 使用單一 setting select 進入設定 detail，不做分組
+    - detail 頁才顯示對應的 Discord object selector 進行更新
+    - Discord channel selector 依 ``config_type`` 限制可選類型：``CHANNEL`` 只顯示 text channel，``CATEGORY`` 只顯示 category
+    - 提供 Back / Refresh，不提供 reset/clear

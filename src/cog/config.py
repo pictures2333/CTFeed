@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 from discord.ext import commands
 import discord
@@ -16,7 +17,7 @@ class ConfigMenu(discord.ui.View):
         super().__init__(timeout=None)
         
         self.bot = bot
-        self.state = "MAIN"
+        self.selected_key: Optional[str] = None
         
     
     async def build_embed_and_view(self) -> discord.Embed:
@@ -24,25 +25,14 @@ class ConfigMenu(discord.ui.View):
         
         # build embed
         try:
-            config_info = await config.read_config(self.state if self.state != "MAIN" else None)
+            config_info = await config.read_config(self.selected_key)
         except Exception as e:
             return discord.Embed(title=f"Fail to read config", description=str(e), color=discord.Color.red())
         
-        color = discord.Color.green()
-        for c in config_info.config:
-            if not c.ok:
-                color = discord.Color.red()
-        
-        embed = discord.Embed(color=color)
-        if self.state == "MAIN":
-            embed.title = "Configuration"
-            for c in config_info.config:
-                embed.add_field(name=c.key, value=c.message, inline=False)
+        if self.selected_key is None:
+            embed = self._build_overview_embed(config_info)
         else:
-            c = config_info.config[0]
-            embed.title = c.key
-            embed.description = c.description
-            embed.add_field(name="Value", value=c.message, inline=False)
+            embed = self._build_detail_embed(config_info)
             
         embed.set_footer(text=f"Guild info: {config_info.guild_name} (id={config_info.guild_id})")
         
@@ -52,60 +42,145 @@ class ConfigMenu(discord.ui.View):
         return embed
 
 
-    async def _build_view(self):
-        self.change_page = discord.ui.Select(
-            placeholder="Details",
-            min_values=1,
-            max_values=1,
-            row=1,
-            options=[discord.SelectOption(label="MAIN")] + \
-                [discord.SelectOption(label=k) for k in model.config_info]
+    def _build_overview_embed(self, config_info) -> discord.Embed:
+        color = discord.Color.green()
+        invalid_count = 0
+        for c in config_info.config:
+            if not c.ok:
+                color = discord.Color.red()
+                invalid_count += 1
+
+        embed = discord.Embed(
+            title="Server Configuration",
+            description=(
+                "All settings are valid."
+                if invalid_count == 0
+                else f"{invalid_count} setting(s) need attention."
+            ),
+            color=color
         )
-        self.change_page.callback = self.on_change_page
-        self.add_item(self.change_page)
-        
-        if self.state != "MAIN":
-            config_info = model.config_info[self.state]
-            self.edit = discord.ui.Select(
-                placeholder="Edit",
+        for c in config_info.config:
+            status = "OK" if c.ok else "INVALID"
+            embed.add_field(
+                name=f"[{status}] {c.key}",
+                value=c.message,
+                inline=False
+            )
+        return embed
+
+
+    def _build_detail_embed(self, config_info) -> discord.Embed:
+        c = config_info.config[0]
+        status = "OK" if c.ok else "INVALID"
+        embed = discord.Embed(
+            title=f"Edit {c.key}",
+            description=c.description,
+            color=discord.Color.green() if c.ok else discord.Color.red()
+        )
+        embed.add_field(name="Status", value=status, inline=True)
+        embed.add_field(name="Key", value=f"`{c.key}`", inline=True)
+        embed.add_field(name="Current value", value=c.message, inline=False)
+        return embed
+
+
+    def _build_edit_select_kwargs(self, config_info:model.ConfigInfo) -> dict:
+        kwargs = {
+            "placeholder": f"Choose {self.selected_key}...",
+            "min_values": 1,
+            "max_values": 1,
+            "row": 1,
+            "select_type": config_info.select_type
+        }
+        if config_info.config_type == model.ConfigType.CHANNEL:
+            kwargs["channel_types"] = [discord.ChannelType.text]
+        elif config_info.config_type == model.ConfigType.CATEGORY:
+            kwargs["channel_types"] = [discord.ChannelType.category]
+        return kwargs
+
+
+    async def _build_view(self):
+        if self.selected_key is None:
+            self.setting_select = discord.ui.Select(
+                placeholder="Select a setting...",
                 min_values=1,
                 max_values=1,
-                row=2,
-                select_type=config_info.select_type
+                row=0,
+                options=[
+                    discord.SelectOption(
+                        label=k,
+                        value=k,
+                        description=model.config_info[k].description[:100],
+                        default=(k == self.selected_key)
+                    )
+                    for k in model.config_info
+                ]
             )
+            self.setting_select.callback = self.on_select_setting
+            self.add_item(self.setting_select)
+        else:
+            selected_config_info = model.config_info[self.selected_key]
+            self.edit = discord.ui.Select(**self._build_edit_select_kwargs(selected_config_info))
             self.edit.callback = self.on_edit
             self.add_item(self.edit)
+
+            self.back = discord.ui.Button(
+                label="Back",
+                style=discord.ButtonStyle.grey,
+                row=2
+            )
+            self.back.callback = self.on_back
+            self.add_item(self.back)
+
+        self.refresh = discord.ui.Button(
+            label="Refresh",
+            style=discord.ButtonStyle.grey,
+            row=2
+        )
+        self.refresh.callback = self.on_refresh
+        self.add_item(self.refresh)
         
         return
 
 
-    async def on_change_page(self, interaction:discord.Interaction):
+    async def on_select_setting(self, interaction:discord.Interaction):
         # check permission
         if not (await security.discord_check_administrator(interaction)):
             return
         
         # check argument
         try:
-            state = str(self.change_page.values[0])
+            key = str(self.setting_select.values[0])
         except Exception:
             await interaction.response.send_message("Invalid arguments", ephemeral=True)
             return
 
-        # change state
-        key = "MAIN" if state == "MAIN" else None
-        
-        if key is None:
-            for k in model.config_info:
-                if state == k:
-                    key = k
-                    break
-                
-        if key is None:
+        if key not in model.config_info:
             await interaction.response.send_message("Invalid arguments", ephemeral=True)
             return
         
         # return
-        self.state = key
+        self.selected_key = key
+        embed = await self.build_embed_and_view()
+        await interaction.response.edit_message(embed=embed, view=self)
+        return
+
+
+    async def on_back(self, interaction:discord.Interaction):
+        # check permission
+        if not (await security.discord_check_administrator(interaction)):
+            return
+
+        self.selected_key = None
+        embed = await self.build_embed_and_view()
+        await interaction.response.edit_message(embed=embed, view=self)
+        return
+
+
+    async def on_refresh(self, interaction:discord.Interaction):
+        # check permission
+        if not (await security.discord_check_administrator(interaction)):
+            return
+
         embed = await self.build_embed_and_view()
         await interaction.response.edit_message(embed=embed, view=self)
         return
@@ -116,24 +191,30 @@ class ConfigMenu(discord.ui.View):
         if not (await security.discord_check_administrator(interaction)):
             return
 
+        selected_key = self.selected_key
+        if selected_key is None:
+            await interaction.response.send_message("Select a setting first", ephemeral=True)
+            return
+
         # check argument
         try:
             value = self.edit.values[0].id
-        except Exception as e:
+        except Exception:
             await interaction.response.send_message("Invalid arguments", ephemeral=True)
             return
         
         # update
         try:
-            await config.update_config((self.state, value))
+            await config.update_config((selected_key, value))
         except Exception as e:
-            await interaction.response.send_message(f"fail to update config (key={self.state}): {str(e)}", ephemeral=True)
+            await interaction.response.send_message(f"fail to update config (key={selected_key}): {str(e)}", ephemeral=True)
             return
         
         # logging
-        logger.info(f"User {interaction.user.name} (id={interaction.user.id}) updated Config (key={self.state}) to value={value}")
+        logger.info(f"User {interaction.user.name} (id={interaction.user.id}) updated Config (key={selected_key}) to value={value}")
         
         # return
+        self.selected_key = selected_key
         embed = await self.build_embed_and_view()
         await interaction.response.edit_message(embed=embed, view=self)
         return
