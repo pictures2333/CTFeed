@@ -20,6 +20,8 @@ services:
       - ./pyproject.toml:/app/pyproject.toml
       - ./uv.lock:/app/uv.lock
       - ./README.md:/app/README.md
+      - ./alembic.ini:/app/alembic.ini
+      - ./migrations:/app/migrations
       - ./startup.sh:/app/startup.sh
     mem_limit: 700M
     cpus: 1.5
@@ -30,7 +32,8 @@ services:
       retries: 3
       start_period: 40s
     depends_on:
-      - database
+      database:
+        condition: service_healthy
   database:
     image: postgres:18
     restart: unless-stopped
@@ -40,3 +43,9 @@ services:
       POSTGRES_PASSWORD: default_database_password # You can change this for security
     volumes:
       - "./db_data:/var/lib/postgresql"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d icedtea"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

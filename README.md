@@ -131,12 +131,16 @@ Discord-side config values are stored in database and set after launch:
 Choose your preferred method:
 
 ```bash
-# With uv (recommended)
+# Apply database migrations and launch the service (recommended)
 ./startup.sh
 
-# Or with Python directly
-uvicorn --host 0.0.0.0 --port 5000 ctfeed:app
+# Or run each step manually
+uv run alembic upgrade head
+uv run uvicorn --host 0.0.0.0 --port 5000 ctfeed:app
 ```
+
+`startup.sh` applies all pending database migrations before starting the
+service. If a migration fails, the service will not start.
 
 ## Docker Management
 

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     GUILD_ID:int
     # from database
     ANNOUNCEMENT_CHANNEL_ID:int=-1
+    CTFMENU_CHANNEL_ID:int=-1
     CTF_CHANNEL_CATEGORY_ID:int=-1
     ARCHIVE_CATEGORY_ID:int=-1
     PM_ROLE_ID:int=-1
@@ -46,6 +47,7 @@ settings.CTFTIME_API_TEAM = settings.CTFTIME_API + "/teams/"
 # lock
 # for the following members
 # - ANNOUNCEMENT_CHANNEL_ID
+# - CTFMENU_CHANNEL_ID
 # - CTF_CHANNEL_CATEGORY_ID
 # - ARCHIVE_CATEGORY_ID
 # - PM_ROLE_ID

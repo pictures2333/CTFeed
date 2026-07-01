@@ -109,6 +109,7 @@ async def update_config(kv:Optional[Tuple]) -> None:
     
     # check arguments
     arg = {}
+    post_func = None
     if kv is not None:
         if len(kv) != 2:
             raise HTTPException(400)
@@ -130,6 +131,9 @@ async def update_config(kv:Optional[Tuple]) -> None:
         
         # success
         arg[k.lower()] = v
+
+        # get post func
+        post_func = cinfo.post_func
     
     # update database
     try:
@@ -145,6 +149,14 @@ async def update_config(kv:Optional[Tuple]) -> None:
     
     # update cache
     await update_config_cache(config)
+
+    # execute post function
+    if post_func is not None:
+        try:
+            await post_func(guild, k, v)
+        except Exception as e:
+            logger.error(f"fail to execute post function of {k}: {str(e)}")
+            raise HTTPException(500, f"config saved, but fail to execute post function of {k}: {str(e)}")
     
     return
 

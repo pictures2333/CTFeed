@@ -233,7 +233,7 @@ class ConfigMenu(discord.ui.View):
         try:
             await config.update_config((selected_key, value))
         except Exception as e:
-            await interaction.response.send_message(f"fail to update config (key={selected_key}): {str(e)}", ephemeral=True)
+            await interaction.response.send_message(f"fail to update config (key={selected_key})\n{str(e)}", ephemeral=True)
             return
         
         # logging
