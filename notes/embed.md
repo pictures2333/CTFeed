@@ -5,5 +5,6 @@
     - 代表失敗、錯誤的 Embed 使用 ``discord.Color.red()``
 
 - 在 Config 中
-    - 如果所有設定 / 該項設定是無效設定（未設定、設定值無效），Embed 使用 ``discord.Color.red()``
-    - 如果設定有效，Embed 使用 ``discord.Color.red()``
+    - Config overview 與 detail Embed 固定使用 ``discord.Color.green()``，不依設定值是否有效而改色
+    - 讀取 Config 失敗時使用 ``discord.Color.red()``
+    - Test 通過使用 ``discord.Color.green()``；Test 拋出錯誤時使用 ``discord.Color.red()``

@@ -110,18 +110,21 @@ Then edit the `.env` file with your specific settings:
 | `DISCORD_BOT_TOKEN` | Discord bot token |
 | `GUILD_ID` | Target guild ID |
 | `HTTP_SECRET_KEY` | Session secret key for FastAPI |
-| `HTTP_FRONTEND_URL` | Frontend base URL (used for OAuth redirect) |
+| `HTTP_FRONTEND_URL` | Frontend base URL used after login and for CORS |
+| `HTTP_API_URL` | Backend API base URL used for the Discord OAuth2 callback and CORS |
 | `HTTP_COOKIE_DOMAIN` | Cookie domain for session |
+| `HTTP_COOKIE_SECURE` | Whether session cookies require HTTPS |
 | `DISCORD_OAUTH2_CLIENT_ID` | Discord OAuth2 client ID |
 | `DISCORD_OAUTH2_CLIENT_SECRET` | Discord OAuth2 client secret |
-| `CHECK_INTERVAL_MINUTES` | CTFTime polling interval |
+| `CHECK_INTERVAL_MINUTES` | Shared background task interval |
 | `DATABASE_URL` | PostgreSQL database URL |
 
-`DISCORD_OAUTH2_REDIRECT_URI` is derived from `HTTP_FRONTEND_URL` as `HTTP_FRONTEND_URL/auth/login`.
+Set the Discord OAuth2 redirect URI to `HTTP_API_URL/auth/login`.
 
 Discord-side config values are stored in database and set after launch:
 
 - `ANNOUNCEMENT_CHANNEL_ID`
+- `CTFMENU_CHANNEL_ID`
 - `CTF_CHANNEL_CATEGORY_ID`
 - `ARCHIVE_CATEGORY_ID`
 - `PM_ROLE_ID`
@@ -168,12 +171,13 @@ Docker command cheatsheet for this bot:
 
 ## How CTFeed Works
 
-Once running, CTFeed will:
+At startup and while running, CTFeed will:
 
-1. Start FastAPI and the Discord bot together in the app lifespan
-2. Initialize database and config cache
-3. Poll CTFTime for new, updated, and removed events
-4. Post notifications to the announcement channel
-5. Create/join event channels and manage membership
-6. Create or recover Discord scheduled events
-7. Auto-archive expired or canceled events
+1. Apply pending database migrations before service startup (`startup.sh` does this automatically)
+2. Initialize singleton database records, config cache, and the HTTP client session in the FastAPI lifespan
+3. Start the Discord bot alongside FastAPI
+4. Poll CTFTime for new, updated, and removed events
+5. Post notifications to the announcement channel
+6. Create/join event channels and manage membership
+7. Create, update, or recover Discord scheduled events
+8. Auto-archive expired or canceled events
