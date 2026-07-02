@@ -18,9 +18,11 @@ USER icedtea
 
 COPY --chown=icedtea:icedtea pyproject.toml uv.lock ./
 COPY --chown=icedtea:icedtea README.md ./
+COPY --chown=icedtea:icedtea alembic.ini startup.sh ./
+COPY --chown=icedtea:icedtea migrations/ ./migrations/
 COPY --chown=icedtea:icedtea ctfeed.py ./
 COPY --chown=icedtea:icedtea src/ ./src/
 
 RUN uv sync --frozen
 
-CMD ["/bin/bash", "./startup.sh"]
+CMD ["/bin/sh", "./startup.sh"]

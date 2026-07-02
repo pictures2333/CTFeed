@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, List, Optional, Callable, Awaitable, Dict
 import enum
 
 from sqlalchemy import (
@@ -13,6 +13,9 @@ from sqlalchemy.orm import relationship, Mapped, mapped_column
 from pydantic import BaseModel
 import discord
 
+from src.backend import config_test
+from src.backend import ctfmenu_message
+
 Base = declarative_base()
 
 # Config
@@ -26,7 +29,10 @@ class ConfigInfo(BaseModel):
     name:str
     data_type:Any
     config_type:ConfigType
-    select_type:Any     # discord.ComponentType
+    select_type:Any                 # discord.ComponentType
+    channel_type:Optional[Any]      # discord.ChannelType
+    test_func:Optional[Callable[[discord.Guild, Dict[str, Any], str], Awaitable[None]]] = None
+    post_func:Optional[Callable[[discord.Guild, str, Any], Awaitable[None]]] = None
     description:str
 
 
@@ -36,13 +42,29 @@ config_info = {
         data_type=int,
         config_type=ConfigType.CHANNEL,
         select_type=discord.ComponentType.channel_select,
+        channel_type=discord.ChannelType.text,
+        test_func=config_test.test_send_message,
+        post_func=None,
         description="The channel which announcements send to"
+    ),
+    "CTFMENU_CHANNEL_ID": ConfigInfo(
+        name="CTFMENU_CHANNEL_ID",
+        data_type=int,
+        config_type=ConfigType.CHANNEL,
+        select_type=discord.ComponentType.channel_select,
+        channel_type=discord.ChannelType.text,
+        test_func=config_test.test_send_message,
+        post_func=ctfmenu_message.post_ctfmenu_channel_id,
+        description="The channel which \"/ctfmenu\" message sends to"
     ),
     "CTF_CHANNEL_CATEGORY_ID": ConfigInfo(
         name="CTF_CHANNEL_CATEGORY_ID",
         data_type=int,
         config_type=ConfigType.CATEGORY,
         select_type=discord.ComponentType.channel_select,
+        channel_type=discord.ChannelType.category,
+        test_func=config_test.test_ctf_channel_category,
+        post_func=None,
         description="The category which CTF channels belong to"
     ),
     "ARCHIVE_CATEGORY_ID": ConfigInfo(
@@ -50,6 +72,9 @@ config_info = {
         data_type=int,
         config_type=ConfigType.CATEGORY,
         select_type=discord.ComponentType.channel_select,
+        channel_type=discord.ChannelType.category,
+        test_func=config_test.test_archive_category,
+        post_func=None,
         description="The category which archived CTF channels belong to"
     ),
     "PM_ROLE_ID": ConfigInfo(
@@ -57,6 +82,9 @@ config_info = {
         data_type=int,
         config_type=ConfigType.ROLE,
         select_type=discord.ComponentType.role_select,
+        channel_type=None,
+        test_func=None,
+        post_func=None,
         description="The role for project managers"
     ),
     "MEMBER_ROLE_ID": ConfigInfo(
@@ -64,6 +92,9 @@ config_info = {
         data_type=int,
         config_type=ConfigType.ROLE,
         select_type=discord.ComponentType.role_select,
+        channel_type=None,
+        test_func=None,
+        post_func=None,
         description="The role for members"
     )
 }
@@ -73,6 +104,7 @@ class Config(Base):
     
     id:Mapped[int] = mapped_column(Integer, primary_key=True, index=True, unique=True, nullable=False, autoincrement=False, default=1)
     announcement_channel_id:Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True, default=-1)
+    ctfmenu_channel_id:Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True, default=-1)
     ctf_channel_category_id:Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True, default=-1)
     archive_category_id:Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True, default=-1)
     pm_role_id:Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True, default=-1)
@@ -175,7 +207,16 @@ class Event(Base):
         secondary=user_event,
         back_populates="events"
     )
-    
-    # challenge: todo
 
-# challenge: todo
+
+# ctfmenu message
+class CTFMenuMessage(Base):
+    __tablename__ = "ctfmenu_message"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, unique=True, nullable=False, autoincrement=False, default=1)
+    message_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True, default=-1)
+    extra_message: Mapped[str] = mapped_column(String, nullable=False, unique=True, default="")
+    
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ctfmenu_message_only_one_row"),
+    )

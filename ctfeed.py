@@ -11,7 +11,6 @@ from src.config import settings
 from src.database import database
 from src.backend.config import update_config_cache
 from src.utils import ctf_api
-from src.utils import commit_id
 from src import crud
 from src import schema
 from src import bot
@@ -24,16 +23,6 @@ logger = logging.getLogger("uvicorn")
 @asynccontextmanager
 async def lifespan(app:FastAPI):
     # startup
-    ## get commit id
-    settings.COMMIT_ID = await commit_id.get_commit_id()
-    
-    ## initialize database
-    try:
-        await database.init_db()
-    except Exception as e:
-        logger.critical(f"fail to initialize database: {str(e)}")
-        raise
-    
     ## initialize config
     try:
         async with database.with_get_db() as session:
@@ -43,6 +32,15 @@ async def lifespan(app:FastAPI):
         logger.critical(f"fail to initialize Config in database: {str(e)}")
         raise
     await update_config_cache(config)
+
+    ## initialize CTFMenuMessage
+    try:
+        async with database.with_get_db() as session:
+            async with session.begin():
+                await crud.create_or_update_ctfmenu_message(session)
+    except Exception as e:
+        logger.critical(f"fail to initialize CTFMenuMessage in database: {str(e)}")
+        raise
     
     ## initialize aiohttp.ClientSession in src.utils.ctf_api
     try:
@@ -103,12 +101,4 @@ async def index() -> schema.General:
     return schema.General(
         success=True,
         message="Shirakami Fubuki is the cutest fox in the world!"
-    )
-
-
-@app.get("/version", tags=["Metadata"])
-async def version() -> schema.General:
-    return schema.General(
-        success=True,
-        message=settings.COMMIT_ID
     )

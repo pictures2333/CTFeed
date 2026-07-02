@@ -5,6 +5,7 @@ import discord
 
 from src.backend import security
 from src.backend import channel_op
+from src.backend import ctfmenu_message
 from src.config import settings
 from src import bgtask
 
@@ -31,6 +32,7 @@ class CTFBGTask(commands.Cog):
         await bgtask._detect_event_update_and_remove()
         await bgtask._auto_archive()
         await bgtask._recover_scheduled_events()
+        await bgtask._recover_ctfmenu_message()
     
     
     @task_checks.before_loop
@@ -73,7 +75,9 @@ class CTFBGTask(commands.Cog):
             
             await interaction.followup.send("Done", ephemeral=True)
             return
-        
+        elif custom_id.startswith("ctfmenu_message:"):
+            await ctfmenu_message.bgtask_interaction(interaction, self.bot, custom_id)
+
 
 def setup(bot:commands.Bot):
     bot.add_cog(CTFBGTask(bot))

@@ -40,6 +40,7 @@ async def create_custom_event(
 @router.get("/ctftime")
 async def read_all_ctftime_event(
     archived:Optional[bool]=None,
+    channel_created:Optional[bool]=None,
     limit:int=Query(gt=0, le=20),
     finish_before:Optional[int]=Query(ge=0, default=None),
     before_id:Optional[int]=Query(ge=0, default=None),
@@ -58,6 +59,7 @@ async def read_all_ctftime_event(
             session=session,
             type="ctftime",
             archived=archived,
+            channel_created=channel_created,
             limit=limit,
             finish_after=None,
             finish_before=finish_before,
@@ -74,6 +76,7 @@ async def read_all_ctftime_event(
 @router.get("/custom")
 async def read_all_custom_event(
     archived:Optional[bool]=None,
+    channel_created:Optional[bool]=None,
     limit:int=Query(gt=0, le=20),
     before_id:Optional[int]=Query(ge=0, default=None),
     session:AsyncSession=Depends(fastapi_get_db),
@@ -85,6 +88,7 @@ async def read_all_custom_event(
             session=session,
             type="custom",
             archived=archived,
+            channel_created=channel_created,
             limit=limit,
             finish_after=None,
             finish_before=None,

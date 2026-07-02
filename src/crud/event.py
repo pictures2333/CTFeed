@@ -17,149 +17,6 @@ class NotFoundError(Exception):
 class LockedError(Exception):
     pass
 
-#async def read_event(
-#    session:AsyncSession,
-#    # lock
-#    lock:bool,
-#    duration:Optional[int]=None,
-#    # filters
-#    type:Optional[Literal["ctftime", "custom"]]=None,
-#    archived:Optional[bool]=None,
-#    id:Optional[int]=None,
-#    channel_id:Optional[int]=None,
-#    # only for CTFTime Events
-#    event_id:Optional[int]=None,
-#    finish_after:Optional[int]=None,
-#) -> Tuple[List[Event], Optional[str]]:
-#    """
-#    Read Events and try to lock an Event.
-#    
-#    :param session:
-#    :param lock: Whether to lock the Event.
-#    :param duration:
-#    :param type: Search "ctftime", "custom" Events, or ``None`` to search both types of Events.
-#    :param archived: Search archived, non-archived Events, or ``None`` to search both types of Events.
-#    :param id:
-#    :param channel_id: Discord channel ID.
-#    :param event_id: (CTFTime Event only) CTFTime Event id.
-#    :param finish_after: (CTFTime Event only) search CTFTime Events which finish after ``finish_after``.
-#    
-#    :return List[Event]: A list of Events.
-#    :return str: Lock owner token.
-#    
-#    :raise NotFoundError: Can't find the Event (when id, channel_id or event_id is not None).
-#    :raise LockedError: The Event was locked.
-#    :raise ValueError:
-#    :raise (Exception from sqlalchemy):
-#    """
-#    # functions
-#    def _build_filter(stmt):
-#        if type is not None:
-#            if type == "ctftime":
-#                if event_id is not None:
-#                    stmt = stmt.where(Event.event_id == event_id)
-#                else:
-#                    stmt = stmt.where(Event.event_id != None)
-#
-#                if finish_after is not None:
-#                    stmt = stmt.where(Event.finish >= finish_after)
-#                    
-#                # sorting
-#                if isinstance(stmt, sqlalchemy.Select):
-#                    stmt = stmt.order_by(sqlalchemy.asc(Event.finish))
-#            elif type == "custom":
-#                stmt = stmt.where(Event.event_id == None)
-#            else:
-#                raise ValueError(f"type should be \"ctftime\", \"custom\" or None")
-#        
-#        if archived is not None:
-#            stmt = stmt.where(Event.archived == archived)
-#    
-#        if id is not None:
-#            stmt = stmt.where(Event.id == id)
-#
-#        if channel_id is not None:
-#            stmt = stmt.where(Event.channel_id == channel_id)
-#        
-#        return stmt
-#    
-#    # check exists stmt
-#    check_exists = sqlalchemy.select(Event) \
-#        .options(selectinload(Event.users))
-#    check_exists:sqlalchemy.Select = _build_filter(check_exists)
-#    
-#    # no need to lock -> execute and return
-#    if lock == False:
-#        try:
-#            results = (await session.execute(check_exists)).scalars().all()
-#        except Exception:
-#            raise
-#        if len(results) == 0:
-#            raise NotFoundError
-#        return results, None
-#    
-#    # need to lock
-#    # only effective when id is not None
-#    if id is None:
-#        raise ValueError("id should not be None when lock is True")
-#        
-#    # argument check
-#    if duration is None:
-#        raise ValueError("duration should not be None when lock is True")
-#
-#    # prepare arguments
-#    time_now = datetime.now(timezone.utc)
-#    locked_until = time_now + timedelta(seconds=duration)
-#    lock_owner_token = hashlib.sha256(os.urandom(32)).hexdigest()
-#    
-#    # stmt
-#    check_exists_cte = check_exists.cte("check_exists_cte")
-#    
-#    try_lock = sqlalchemy.update(Event)
-#    try_lock:sqlalchemy.Update = _build_filter(try_lock)
-#    try_lock_cte = (
-#        try_lock
-#        .where(sqlalchemy.or_(
-#            Event.locked_until == None,
-#            Event.locked_until < int(time_now.timestamp())
-#        ))
-#        .values(
-#            locked_until=int(locked_until.timestamp()),
-#            locked_by=lock_owner_token
-#        )
-#        .returning(Event)
-#    ).cte("try_lock_cte")
-#    
-#    check_lock = sqlalchemy.exists(
-#        sqlalchemy.select(try_lock_cte.c.id) \
-#        .where(try_lock_cte.c.id == id) \
-#        .where(try_lock_cte.c.locked_by == lock_owner_token)
-#    )
-#    
-#    stmt = sqlalchemy.select(
-#        sqlalchemy.case(
-#            (check_lock, "success"),
-#            else_="locked"
-#        ),
-#        Event
-#    ) \
-#    .options(selectinload(Event.users)) \
-#    .join(check_exists_cte, check_exists_cte.c.id == Event.id) \
-#    .where(check_exists_cte.c.id == id)
-#    
-#    # execute
-#    async with session.begin():
-#        results = (await session.execute(stmt)).all()
-#        if len(results) == 0:
-#            raise NotFoundError
-#        else:
-#            status = results[0][0]
-#            event_db = results[0][1]
-#            if status == "success":
-#                return [event_db], lock_owner_token
-#            elif status == "locked":
-#                raise LockedError
-#
 
 async def unlock_event(session:AsyncSession, id:int, lock_owner_token:str) -> bool:
     """
@@ -483,6 +340,7 @@ async def read_event_many(
     session:AsyncSession,
     type:Literal["ctftime", "custom"],
     archived:Optional[bool]=None,
+    channel_created:Optional[bool]=None,
     limit:Optional[int]=None,
     # ctftime events
     finish_after:Optional[int]=None,
@@ -511,6 +369,7 @@ async def read_event_many(
     :param session:
     :param type: Search ``ctftime`` or ``custom`` Events.
     :param archived: Search archived, non-archived Events, or ``None`` to search both types of Events.
+    :param channel_created: Search Events with channel, without channel, or ``None`` to search both.
     :param limit:
     :param finish_after:
     :param finish_before:
@@ -578,6 +437,12 @@ async def read_event_many(
     
     if archived is not None:
         stmt = stmt.where(Event.archived == archived)
+    
+    if channel_created is not None:
+        if channel_created is True:
+            stmt = stmt.where(Event.channel_id != None)
+        else:
+            stmt = stmt.where(Event.channel_id == None)
 
     # execute
     try:

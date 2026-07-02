@@ -6,3 +6,4 @@ from .event import (
     join_event, delete_user_in_event,
     create_event, read_event_one, read_event_many, read_ctfime_events_need_archive, update_event,
 )
+from .ctfmenu_message import create_or_update_ctfmenu_message, read_ctfmenu_message

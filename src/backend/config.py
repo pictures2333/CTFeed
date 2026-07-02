@@ -1,9 +1,7 @@
-from typing import Tuple, Optional, Any
+from typing import Tuple, Optional, Any, Dict
 import logging
 
 from fastapi import HTTPException
-from discord.ext import commands
-import discord
 
 from src import schema
 from src import crud
@@ -11,60 +9,23 @@ from src.bot import get_guild
 from src.database import model
 from src.database import database
 from src.config import settings, settings_lock
-from src.utils.get_category import get_category
+from src.backend import config_test
 
 # logging
 logger = logging.getLogger("uvicorn")
 
-# functions
-async def check_config_valid_obj(guild:discord.Guild, key:str, value:Any) -> Tuple[str, Any]:
-    """
-    Check whether the value of the config points to a valid object in Discord.
-    
-    :param guild:
-    :param key:
-    :param value:
-    
-    :return message:
-    :return object: The object which the value of the config points to.
-    """
-    
-    config_info = model.config_info[key]
-        
-    msg = ""
-    _ = None
-    if config_info.config_type == model.ConfigType.CHANNEL and \
-            (_ := guild.get_channel(value)) is not None and \
-            isinstance(_, discord.TextChannel):
-        msg = f"Channel: {_.name}\nID: (value={value})"
-    elif config_info.config_type == model.ConfigType.CATEGORY and \
-            (_ := get_category(guild, value)) is not None:
-        msg = f"Category: {_.name}\nID: (value={value})"
-    elif config_info.config_type == model.ConfigType.ROLE and \
-            (_ := guild.get_role(value)) is not None:
-        msg = f"Role: {_.name}\nID: (value={value})"
-    else:
-        msg = f"(Invalid)\nvalue={value}"
-        _ = None
-        
-    return msg, _
+# config cache
+async def update_config_cache(config:model.Config) -> None:
+    async with settings_lock:
+        for _k in model.config_info:
+            try:
+                _v = getattr(config, _k.lower())
+                setattr(settings, _k, _v)
+            except Exception as e:
+                logger.critical(f"fail to update cache of config (key={_k}) (maybe src.database.model.Config, src.database.model.config_info and src.config are out of sync): {str(e)}")
 
 
-async def read_config(key:Optional[str]=None) -> schema.ConfigResponse:
-    """
-    Read config.
-    
-    :param bot:
-    :param key:
-    
-    :return ConfigResponse: Guild name, Guild id and Config.
-    
-    :raise HTTPException:
-    """
-    # get guild
-    guild = get_guild()
-    
-    # get config
+async def read_config_cache(key: Optional[str]=None) -> Dict[str, Any]:
     cache_config = {}
     async with settings_lock:
         if key is not None:
@@ -84,14 +45,37 @@ async def read_config(key:Optional[str]=None) -> schema.ConfigResponse:
                     cinfo = model.config_info[k]
                     cache_config[k] = cinfo.data_type(getattr(settings, k))
                 except Exception as e:
-                    logger.critical(f"fail to get config (key={k}) from settings (cache) (maybe src.database.model.Config, src.database.model.config_info and src.config are out of sync): {str(e)}")
+                    errmsg = f"fail to get config (key={k}) from settings (cache) (maybe src.database.model.Config, src.database.model.config_info and src.config are out of sync): {str(e)}"
+                    logger.critical(errmsg)
+                    raise HTTPException(500, errmsg)
+
+    return cache_config
+
+
+# config
+async def read_config(key:Optional[str]=None) -> schema.ConfigResponse:
+    """
+    Read config.
+    
+    :param bot:
+    :param key:
+    
+    :return ConfigResponse: Guild name, Guild id and Config.
+    
+    :raise HTTPException:
+    """
+    # get guild
+    guild = get_guild()
+    
+    # get config
+    cache_config = await read_config_cache(key)
     
     # get details
     configs = []
     for k in cache_config:
         cinfo = model.config_info[k]
         v = cache_config[k]
-        msg, _ = await check_config_valid_obj(guild, k, v)
+        msg, _ = await config_test.check_config_valid_obj(guild, k, v)
         configs.append(schema.Config(
             key=k,
             description=cinfo.description,
@@ -111,17 +95,7 @@ async def read_config(key:Optional[str]=None) -> schema.ConfigResponse:
     )
 
 
-async def update_config_cache(config:model.Config):
-    async with settings_lock:
-        for _k in model.config_info:
-            try:
-                _v = getattr(config, _k.lower())
-                setattr(settings, _k, _v)
-            except Exception as e:
-                logger.critical(f"fail to update cache of config (key={_k}) (maybe src.database.model.Config, src.database.model.config_info and src.config are out of sync): {str(e)}")
-
-
-async def update_config(kv:Optional[Tuple]):
+async def update_config(kv:Optional[Tuple]) -> None:
     """
     Update Config in database and cache.
     
@@ -135,6 +109,7 @@ async def update_config(kv:Optional[Tuple]):
     
     # check arguments
     arg = {}
+    post_func = None
     if kv is not None:
         if len(kv) != 2:
             raise HTTPException(400)
@@ -150,12 +125,15 @@ async def update_config(kv:Optional[Tuple]):
             v = cinfo.data_type(v)
         except Exception:
             raise HTTPException(400)
-        _, obj = await check_config_valid_obj(guild, k, v)
+        _, obj = await config_test.check_config_valid_obj(guild, k, v)
         if obj is None:
             raise HTTPException(400)
         
         # success
         arg[k.lower()] = v
+
+        # get post func
+        post_func = cinfo.post_func
     
     # update database
     try:
@@ -171,5 +149,35 @@ async def update_config(kv:Optional[Tuple]):
     
     # update cache
     await update_config_cache(config)
+
+    # execute post function
+    if post_func is not None:
+        try:
+            await post_func(guild, k, v)
+        except Exception as e:
+            logger.error(f"fail to execute post function of {k}: {str(e)}")
+            raise HTTPException(500, f"config saved, but fail to execute post function of {k}: {str(e)}")
+    
+    return
+
+
+async def test_config(key:str) -> None:
+    # get guild
+    guild = get_guild()
+
+    # get config
+    cache_config = await read_config_cache()
+    config_info = model.config_info[key]
+    value = cache_config[key]
+
+    # test
+    msg, _ = await config_test.check_config_valid_obj(guild, key, value)
+    if _ is None:
+        raise HTTPException(500, f"Type check for {key} failed")
+    
+    if (config_info.test_func is not None):
+        errmsg = await config_info.test_func(guild, cache_config, key)
+        if errmsg:
+            raise HTTPException(500, errmsg)
     
     return

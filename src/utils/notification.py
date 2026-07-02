@@ -4,7 +4,7 @@ from enum import Enum
 import discord
 
 from src.bot import get_guild
-from src.config import settings
+from src.config import settings, settings_lock
 
 async def send_notification(
     channel_id:Union[Literal["anno"], Optional[int]],
@@ -29,9 +29,12 @@ async def send_notification(
     
     # args
     if channel_id == "anno":
-        channel = guild.get_channel(settings.ANNOUNCEMENT_CHANNEL_ID)
+        async with settings_lock:
+            announcement_channel_id = settings.ANNOUNCEMENT_CHANNEL_ID
+
+        channel = guild.get_channel(announcement_channel_id)
         if channel is None:
-            raise RuntimeError(f"Announcement channel (id={settings.ANNOUNCEMENT_CHANNEL_ID}) not found")
+            raise RuntimeError(f"Announcement channel (id={announcement_channel_id}) not found")
     else:
         if channel_id is None or (channel := guild.get_channel(channel_id)) is None:
             # ignore exception and return None

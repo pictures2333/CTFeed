@@ -4,17 +4,19 @@
     - ``datetime.now(timezone.utc)``
     - ``datetime_obj_with_timezone.astimezone(timezone.utc)``
 - 批量讀取 Event
-  - 使用 ``read_event_many()``
+  - 一般列表與背景查詢使用 ``read_event_many()``
+  - Auto-archive 使用專用的 ``read_ctfime_events_need_archive()`` 查詢尚未封存且 ``finish < finish_before`` 的 CTFTime Event
   - ``finish_after`` mode: ``finish_after=int((datetime.now(timezone.utc) + timedelta(days=settings.DATABASE_SEARCH_DAYS)).timestamp())``
-  - 我們需要限制讀出的數量，避免 DoS
+  - 對外的分頁查詢需要限制讀出數量，避免 DoS；內部 ``finish_after`` mode 以時間範圍限制資料
   - 為避免日後讀取程式碼困難，使用不同的 mode 需要明確傳參（如 finish_before=None，就算是 None 也要傳）
-- 請確保在操作 Database 中的 events table 時遵循以下流程，並確保整個流程被包覆在``try...except...finally...``中：
-  1. 使用 ``src.crud.read_event(..., lock=True, duration=120) 對單個 event 加鎖，並獲取物件
+- 對既有 Event 執行需要維持 Discord resource 與 database 一致性的操作時，遵循以下流程，並確保整個流程被包覆在``try...except...finally...``中：
+  1. 使用 ``src.crud.read_event_one(..., lock=True, duration=120)`` 對單個 event 加鎖，並獲取物件
   2. （如果有需要，如創建頻道後將 ID 更新到資料庫）操作 Discord Bot
   3. 更新資料庫中的資料
   4. 在``finally...``區塊中解鎖
   5. 如有發生錯誤，在``except...``區塊中 rollback（例如：刪除創建出來的 Discord channel）
-  - 純讀取不受此限制
+  - 純讀取、純 database 更新，以及 database commit 後才執行的 best-effort notification 不受 Discord rollback 流程限制
+  - ``archive_event()`` 是目前的例外：先將 database 標記為 archived，再以 best-effort 發送通知與刪除 scheduled event；只有 private channel 通知成功並取得 channel object 時才會嘗試移動 channel。Discord 操作失敗只記錄 error，不 rollback database
 
 ## Docs
 
@@ -40,6 +42,7 @@
 - 單筆查詢一律以 ``Event.id`` 為核心條件
 - 加鎖模式採用原子條件更新（``locked_until`` + ``locked_by``）避免競態
 - 回傳的 ``lock_owner_token`` 需在後續 ``update_event`` / ``unlock_event`` 使用
+- 目前呼叫端使用 ``duration=120``，lock 是不會自動續租的 lease；操作超過期限後，其他工作可以重新取得 lock，原 owner 的後續 ``update_event`` 也會因 lock 過期而失敗
 
 
 ### ``read_event_many``
@@ -47,11 +50,12 @@
 #### 用途
 - 用於讀取多筆 Event，給 API 列表查詢與背景工作使用
 - 支援 ``ctftime`` 與 ``custom`` 兩種查詢模式
+- Auto-archive 不使用此函式，改用 ``read_ctfime_events_need_archive()``
 
 #### 使用方法
 - ``type=ctftime``
     - ``finish_after`` mode
-        - 只傳 ``finish_after``
+        - paging 參數只有 ``finish_after`` 可以是非 ``None``
         - 不能同時傳 ``finish_before``、``limit``、``before_id``
     - ``finish_before`` mode
         - ``finish_after`` 必須是 ``None``
@@ -64,6 +68,10 @@
     - 下一頁：帶上前一頁最後一筆 ``id`` 到 ``before_id``
 - 不能傳 ``finish_after`` / ``finish_before``
 - ``archived`` 可選，用於限制封存狀態
+- ``channel_created`` 可選：
+    - ``True``：只查已建立 / 已綁定 Discord channel 的 Event
+    - ``False``：只查尚未建立 / 尚未綁定 Discord channel 的 Event
+    - ``None``：不限制 channel 狀態
 
 #### 設計說明
 - ``ctftime`` 分頁採用複合游標條件：
@@ -83,6 +91,8 @@
 
 #### 設計說明
 - View timeout 設為 ``60s``，避免互動元件長時間掛著
+- 預設只顯示已建立 / 已綁定 Discord channel 的 Event（``channel_created=True``）
+- ``Created Channels`` 按鈕可切換是否只顯示已建立 channel 的 Event；切換時會建立新的 ``EventMenu``，重置頁碼與快取
 - ``ctftime`` 清單採「首次查詢後快取」：
   - 第一次 ``build_embed_and_view()`` 查一次資料庫
   - 後續翻頁只吃記憶體快取，不重查 DB
