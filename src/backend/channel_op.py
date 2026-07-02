@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException
 import discord
 
-from src.config import settings
+from src.config import settings, settings_lock
 from src.database import database
 from src.database import model
 from src.utils import notification
@@ -54,9 +54,12 @@ async def _create_channel(session:AsyncSession, member:discord.Member, event_db:
     guild = get_guild()
     
     # get category
-    if (ctf_channel_category := get_category.get_category(guild, settings.CTF_CHANNEL_CATEGORY_ID)) is None:
-        logger.critical(f"CTF channel category (id={settings.CTF_CHANNEL_CATEGORY_ID}) not found")
-        raise HTTPException(500, f"CTF channel category (id={settings.CTF_CHANNEL_CATEGORY_ID}) not found")
+    async with settings_lock:
+        ctf_channel_category_id = settings.CTF_CHANNEL_CATEGORY_ID
+
+    if (ctf_channel_category := get_category.get_category(guild, ctf_channel_category_id)) is None:
+        logger.critical(f"CTF channel category (id={ctf_channel_category_id}) not found")
+        raise HTTPException(500, f"CTF channel category (id={ctf_channel_category_id}) not found")
     
     try:
         async with session.begin():
@@ -227,9 +230,12 @@ async def archive_event(event_db_id:int, reason:str):
     guild = get_guild()
     
     # get archive category
-    if (archive_category := get_category.get_category(guild, settings.ARCHIVE_CATEGORY_ID)) is None:
-        logger.critical(f"Archive Category (id={settings.ARCHIVE_CATEGORY_ID}) not found")
-        raise HTTPException(500, f"Archive Category (id={settings.ARCHIVE_CATEGORY_ID}) not found")
+    async with settings_lock:
+        archive_category_id = settings.ARCHIVE_CATEGORY_ID
+
+    if (archive_category := get_category.get_category(guild, archive_category_id)) is None:
+        logger.critical(f"Archive Category (id={archive_category_id}) not found")
+        raise HTTPException(500, f"Archive Category (id={archive_category_id}) not found")
     
     async with database.with_get_db() as session:
         event_db, lock_owner_token = await read_event_one_wrapper(session, event_db_id)
